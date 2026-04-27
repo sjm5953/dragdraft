@@ -1,0 +1,41 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+@theme {
+    --font-gsf: "Google Sans Flex";
+}
+
+@plugin "daisyui/theme" {
+  name: "lime";
+  default: true;
+  --color-primary: var(--color-rose-300);
+  --color-neutral: var(--color-neutral-900);
+}
+
+.tabs-auth .tab {
+    color: var(--color-neutral-300);
+    width: 50%;
+}
+
+.tabs-auth .tab-active {
+    color: var(--color-primary);
+}
+
+.tabs-league .tab-active {
+    color: var(--color-neutral);
+}
+
+.tabs-league .tab {
+    width: 50%;
+}
+
+  .drag-mirror {
+    position: fixed;
+    top: -9999px;
+    left: -9999px;
+    width: 150px;
+    opacity: 0.95;
+    pointer-events: none;
+    transform: rotate(2deg);
+    z-index: 9999;
+  }

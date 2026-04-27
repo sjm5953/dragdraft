@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <!-- tailwind -->
+    <link href="src/output.css" rel="stylesheet" />
+    <!-- fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,1..1000&display=swap"
+      rel="stylesheet"
+    />
+    <!-- icons -->
+    <link
+      rel="stylesheet"
+      href="https://cdn-uicons.flaticon.com/4.0.0/uicons-bold-rounded/css/uicons-bold-rounded.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn-uicons.flaticon.com/4.0.0/uicons-solid-straight/css/uicons-solid-straight.css"
+    />
+    <script
+      src="https://cdn.jsdelivr.net/npm/@tailwindplus/elements@1"
+      type="module"
+    ></script>
+  </head>
+  <body class="font-gsf">
+    <!--main container-->
+    <div
+      class="h-screen bg-neutral flex items-center justify-center text-base-100 px-10"
+    >
+      <div class="w-full md:max-w-lg flex flex-col items-center">
+        <h1 class="font-black uppercase text-4xl">
+          <span class="text-primary">Drag</span>Draft
+        </h1>
+        <div role="tablist" class="tabs tabs-auth tabs-border mt-4 w-full">
+          <a role="tab" data-tab="login" class="tab tab-active">Login</a>
+
+          <a role="tab" data-tab="signup" class="tab">Signup</a>
+        </div>
+        <!--login-->
+        <form id="loginForm" class="fieldset w-full mt-8">
+          <label
+            class="fieldset-label text-base-100 uppercase font-black text-xs"
+          >
+            Email
+          </label>
+          <input
+            id="loginEmail"
+            placeholder="hello@company.com"
+            type="email"
+            required
+            class="input w-full bg-transparent rounded-none shadow-none border-0 border-b border-neutral-500"
+          />
+
+          <label
+            class="fieldset-label text-base-100 uppercase font-black text-xs mt-4"
+          >
+            Password
+          </label>
+          <input
+            id="loginPassword"
+            placeholder="*********"
+            type="password"
+            required
+            class="input w-full bg-transparent rounded-none shadow-none border-0 border-b border-neutral-500"
+          />
+
+          <button
+            class="btn bg-primary border-0 shadow-none rounded-none mt-8 md:mt-10 uppercase font-black h-12"
+          >
+            Login
+          </button>
+        </form>
+
+        <!--signup-->
+        <form id="signupForm" class="fieldset w-full mt-8 hidden">
+          <label
+            class="fieldset-label text-base-100 uppercase font-black text-xs"
+          >
+            Email
+          </label>
+          <input
+            id="signupEmail"
+            placeholder="hello@company.com"
+            type="email"
+            required
+            class="input w-full bg-transparent rounded-none shadow-none border-0 border-b border-neutral-500"
+          />
+
+          <label
+            class="fieldset-label text-base-100 uppercase font-black text-xs mt-4"
+          >
+            Display Name
+          </label>
+          <input
+            id="signupDisplayName"
+            placeholder="Divaqueen123"
+            type="text"
+            required
+            class="input w-full bg-transparent rounded-none shadow-none border-0 border-b border-neutral-500"
+          />
+
+          <label
+            class="fieldset-label text-base-100 uppercase font-black text-xs mt-4"
+          >
+            Password
+          </label>
+          <input
+            id="signupPassword"
+            placeholder="*********"
+            type="password"
+            required
+            class="input w-full bg-transparent rounded-none shadow-none border-0 border-b border-neutral-500"
+          />
+
+          <label
+            class="fieldset-label text-base-100 uppercase font-black text-xs mt-4"
+          >
+            Confirm Password
+          </label>
+          <input
+            id="signupConfirmPassword"
+            placeholder="*********"
+            type="password"
+            required
+            class="input w-full bg-transparent rounded-none shadow-none border-0 border-b border-neutral-500"
+          />
+
+          <button
+            class="btn bg-primary border-0 shadow-none rounded-none mt-8 md:mt-10 uppercase font-black h-12"
+          >
+            Signup
+          </button>
+        </form>
+      </div>
+    </div>
+    <script>
+      const AIRTABLE_TOKEN =
+        "patVP0kfX1Ch4uKWl.896c99262e92660d8728aba045b4e1cb0a3fdebd80cf3310df67f930323d66d6";
+      const BASE_ID = "appWSxdKSUmtWAIAw";
+      const USERS_TABLE = "Users";
+
+      const API_URL = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(USERS_TABLE)}`;
+
+      const headers = {
+        Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+        "Content-Type": "application/json",
+      };
+
+      const tabs = document.querySelectorAll(".tab");
+      const loginForm = document.querySelector("#loginForm");
+      const signupForm = document.querySelector("#signupForm");
+
+      tabs.forEach((tab) => {
+        tab.addEventListener("click", () => {
+          tabs.forEach((t) => t.classList.remove("tab-active"));
+          tab.classList.add("tab-active");
+
+          const mode = tab.dataset.tab;
+
+          loginForm.classList.toggle("hidden", mode !== "login");
+          signupForm.classList.toggle("hidden", mode !== "signup");
+        });
+      });
+
+      async function findUserByEmail(email) {
+        const formula = `{email} = "${email}"`;
+        const url = `${API_URL}?filterByFormula=${encodeURIComponent(formula)}`;
+
+        const res = await fetch(url, { headers });
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error(data);
+          throw new Error("Could not search users.");
+        }
+
+        return data.records[0] || null;
+      }
+
+      async function createUser({ email, displayName, password }) {
+        const res = await fetch(API_URL, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            fields: {
+              name: displayName,
+              email: email,
+              display_name: displayName,
+              password: password,
+            },
+          }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error(data);
+          throw new Error("Could not create user.");
+        }
+
+        return data;
+      }
+
+      function saveSession(userRecord) {
+        localStorage.setItem(
+          "dragdraft_user",
+          JSON.stringify({
+            id: userRecord.id,
+            email: userRecord.fields.email,
+            name: userRecord.fields.name,
+            display_name: userRecord.fields.display_name,
+            Icon_url: userRecord.fields.Icon_url || "",
+          }),
+        );
+      }
+
+      loginForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const email = document.querySelector("#loginEmail").value.trim();
+        const password = document.querySelector("#loginPassword").value;
+
+        try {
+          const user = await findUserByEmail(email);
+
+          if (!user) {
+            alert("No account found with that email.");
+            return;
+          }
+
+          if (user.fields.password !== password) {
+            alert("Incorrect password.");
+            return;
+          }
+
+          saveSession(user);
+          window.location.href = "leagues.html";
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      signupForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const email = document.querySelector("#signupEmail").value.trim();
+        const displayName = document
+          .querySelector("#signupDisplayName")
+          .value.trim();
+        const password = document.querySelector("#signupPassword").value;
+        const confirmPassword = document.querySelector(
+          "#signupConfirmPassword",
+        ).value;
+
+        if (password !== confirmPassword) {
+          alert("Passwords do not match.");
+          return;
+        }
+
+        try {
+          const existingUser = await findUserByEmail(email);
+
+          if (existingUser) {
+            alert("An account already exists with that email.");
+            return;
+          }
+
+          const newUser = await createUser({
+            email,
+            displayName,
+            password,
+          });
+
+          saveSession(newUser);
+          window.location.href = "leagues.html";
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+    </script>
+  </body>
+</html>

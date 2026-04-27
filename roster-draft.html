@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <!-- tailwind -->
+    <link href="src/output.css" rel="stylesheet" />
+    <!-- fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,1..1000&display=swap"
+      rel="stylesheet"
+    />
+    <!-- icons -->
+    <link
+      rel="stylesheet"
+      href="https://cdn-uicons.flaticon.com/4.0.0/uicons-bold-rounded/css/uicons-bold-rounded.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn-uicons.flaticon.com/4.0.0/uicons-solid-straight/css/uicons-solid-straight.css"
+    />
+    <script
+      src="https://cdn.jsdelivr.net/npm/@tailwindplus/elements@1"
+      type="module"
+    ></script>
+  </head>
+  <body class="overflow-hidden font-gsf">
+    <!--main container-->
+    <div class="h-screen flex flex-col">
+      <!--header-->
+      <div class="h-16 flex items-center px-4 justify-between">
+        <div>
+          <h1 class="font-black uppercase text-sm">
+            <span class="text-primary">Drag</span>Draft
+          </h1>
+        </div>
+        <div>
+          <a class="btn btn-square btn-sm bg-neutral rounded-none text-base-100"
+            ><i class="fi fi-br-menu-burger pt-1"></i
+          ></a>
+        </div>
+      </div>
+      <!--body-->
+      <div
+        class="flex-1 overflow-y-auto px-4 mt-4 w-full md:max-w-3xl md:mx-auto"
+      >
+        <!--page header-->
+        <div class="flex items-center gap-4">
+          <a
+            id="backToLeagueBtn"
+            href="leagues.html"
+            class="btn btn-square btn-xs bg-base-100 text-neutral border-neutral shadow-none"
+          >
+            <i class="fi fi-br-angle-left pt-1"></i>
+          </a>
+
+          <h1 id="draftPageTitle" class="font-black uppercase text-2xl">
+            Roster Draft
+          </h1>
+        </div>
+        <div class="mt-6">
+          <div class="flex items-center justify-between">
+            <h2 class="font-black uppercase text-lg">Roster Slots</h2>
+
+            <button
+              id="saveRosterBtn"
+              class="btn btn-sm rounded-none bg-primary text-neutral border-0 shadow-none uppercase font-black"
+            >
+              Save
+            </button>
+          </div>
+
+          <div id="slotGrid" class="grid grid-cols-2 gap-3 mt-3"></div>
+
+          <h2 class="font-black uppercase text-lg mt-8">Available Queens</h2>
+
+          <div id="queenGrid" class="grid grid-cols-2 gap-3 mt-3 pb-10"></div>
+        </div>
+      </div>
+    </div>
+    <script>
+      const AIRTABLE_TOKEN =
+        "patVP0kfX1Ch4uKWl.896c99262e92660d8728aba045b4e1cb0a3fdebd80cf3310df67f930323d66d6";
+      const BASE_ID = "appWSxdKSUmtWAIAw";
+
+      const TABLES = {
+        leagues: "Leagues",
+        leagueMembers: "League Members",
+        users: "Users",
+        seasons: "Seasons",
+        episodes: "Episodes",
+        seasonContestants: "Season Contestants",
+        queens: "Queens",
+        rosterAssignments: "Roster Assignments",
+      };
+
+      const headers = {
+        Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+        "Content-Type": "application/json",
+      };
+
+      const currentUser = JSON.parse(localStorage.getItem("dragdraft_user"));
+      const params = new URLSearchParams(window.location.search);
+      const leagueId = params.get("league");
+
+      const slotGrid = document.querySelector("#slotGrid");
+      const queenGrid = document.querySelector("#queenGrid");
+      const saveRosterBtn = document.querySelector("#saveRosterBtn");
+
+      let currentLeague = null;
+      let currentLeagueMember = null;
+      let activeSeason = null;
+      let availableEpisodeIds = [];
+      let seasonContestants = [];
+      let activeAssignments = [];
+      let slots = [];
+
+      if (!currentUser?.id) {
+        window.location.href = "auth.html";
+      }
+
+      function setDragPreview(e, queen) {
+        const mirror = document.createElement("div");
+        mirror.className = "drag-mirror bg-neutral-100 p-3 shadow-xl";
+
+        mirror.innerHTML = `
+    ${
+      queen.image_url
+        ? `<img src="${queen.image_url}" class="w-full aspect-square object-cover bg-neutral-300" />`
+        : `<div class="w-full aspect-square bg-neutral-300"></div>`
+    }
+
+    <h3 class="font-black uppercase text-xs mt-2 leading-tight">
+      ${queen.name}
+    </h3>
+  `;
+
+        document.body.appendChild(mirror);
+
+        e.dataTransfer.setDragImage(mirror, 75, 75);
+
+        setTimeout(() => {
+          mirror.remove();
+        }, 0);
+      }
+
+      function airtableUrl(tableName, extra = "") {
+        return `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(tableName)}${extra}`;
+      }
+
+      async function getRecordById(tableName, id) {
+        const res = await fetch(airtableUrl(tableName, `/${id}`), { headers });
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error(data);
+          return null;
+        }
+
+        return data;
+      }
+
+      async function createRecord(tableName, fields) {
+        const res = await fetch(airtableUrl(tableName), {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ fields }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error(data);
+          throw new Error(`Could not create record in ${tableName}`);
+        }
+
+        return data;
+      }
+
+      async function updateRecord(tableName, id, fields) {
+        const res = await fetch(airtableUrl(tableName, `/${id}`), {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ fields }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error(data);
+          throw new Error(`Could not update record in ${tableName}`);
+        }
+
+        return data;
+      }
+
+      function formatPoints(value) {
+        return Number(value || 0);
+      }
+
+      async function getQueenForSeasonContestant(seasonContestant) {
+        const queenId = seasonContestant.fields.queen?.[0];
+
+        if (!queenId) {
+          return {
+            name: "Unknown queen",
+            image_url: "",
+          };
+        }
+
+        const queen = await getRecordById(TABLES.queens, queenId);
+
+        return {
+          name: queen?.fields?.name || "Unknown queen",
+          image_url: queen?.fields?.image_url || "",
+        };
+      }
+
+      async function loadLeagueContext() {
+        currentLeague = await getRecordById(TABLES.leagues, leagueId);
+
+        if (!currentLeague) {
+          slotGrid.innerHTML = `<div class="bg-red-100 text-red-700 p-4">League not found.</div>`;
+          return;
+        }
+        document.querySelector("#draftPageTitle").textContent =
+          currentLeague.fields.name || "Roster Draft";
+
+        document.querySelector("#backToLeagueBtn").href =
+          `league-detail.html?league=${currentLeague.id}`;
+
+        const leagueMemberIds = currentLeague.fields.league_members || [];
+
+        for (const id of leagueMemberIds) {
+          const member = await getRecordById(TABLES.leagueMembers, id);
+
+          if (member?.fields?.member?.[0] === currentUser.id) {
+            currentLeagueMember = member;
+            break;
+          }
+        }
+
+        if (!currentLeagueMember) {
+          slotGrid.innerHTML = `<div class="bg-red-100 text-red-700 p-4">You are not a member of this league.</div>`;
+          return;
+        }
+
+        const activeSeasonId = currentLeague.fields.active_season?.[0];
+
+        if (!activeSeasonId) {
+          slotGrid.innerHTML = `<div class="bg-neutral-100 p-4">No active season set.</div>`;
+          return;
+        }
+
+        activeSeason = await getRecordById(TABLES.seasons, activeSeasonId);
+
+        const episodeIds = activeSeason?.fields?.episodes || [];
+
+        const episodes = [];
+
+        for (const id of episodeIds) {
+          const episode = await getRecordById(TABLES.episodes, id);
+          if (episode) episodes.push(episode);
+        }
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        availableEpisodeIds = episodes
+          .filter((episode) => {
+            if (!episode.fields.air_date) return true;
+
+            const airDate = new Date(episode.fields.air_date);
+            airDate.setHours(0, 0, 0, 0);
+
+            return airDate >= today;
+          })
+          .map((episode) => episode.id);
+
+        if (!availableEpisodeIds.length) {
+          availableEpisodeIds = episodeIds;
+        }
+      }
+
+      async function loadSeasonContestants() {
+        const seasonContestantIds =
+          activeSeason?.fields?.season_contestants || [];
+
+        seasonContestants = [];
+
+        for (const id of seasonContestantIds) {
+          const seasonContestant = await getRecordById(
+            TABLES.seasonContestants,
+            id,
+          );
+
+          if (!seasonContestant) continue;
+
+          const queen = await getQueenForSeasonContestant(seasonContestant);
+
+          seasonContestants.push({
+            id: seasonContestant.id,
+            name: queen.name,
+            image_url: queen.image_url,
+            points: formatPoints(seasonContestant.fields.total_season_points),
+          });
+        }
+
+        seasonContestants.sort((a, b) => a.name.localeCompare(b.name));
+      }
+
+      async function loadActiveRoster() {
+        const assignmentIds =
+          currentLeagueMember.fields.roster_assignments || [];
+
+        activeAssignments = [];
+
+        for (const id of assignmentIds) {
+          const assignment = await getRecordById(TABLES.rosterAssignments, id);
+
+          if (!assignment) continue;
+
+          const isActive = assignment.fields.active === true;
+
+          if (isActive) {
+            activeAssignments.push(assignment);
+          }
+        }
+
+        const availableSlots = Number(
+          currentLeagueMember.fields.available_slots || 0,
+        );
+
+        slots = Array.from({ length: availableSlots }, (_, index) => {
+          const assignment = activeAssignments[index];
+          const seasonContestantId = assignment?.fields?.queen?.[0] || null;
+
+          return {
+            slotIndex: index,
+            seasonContestantId,
+          };
+        });
+      }
+
+      function getSelectedIds() {
+        return slots.map((slot) => slot.seasonContestantId).filter(Boolean);
+      }
+
+      function renderSlots() {
+        slotGrid.innerHTML = "";
+
+        if (!slots.length) {
+          slotGrid.innerHTML = `
+        <div class="bg-neutral-100 p-4 col-span-2">
+          <h2 class="font-black uppercase text-md">No slots available</h2>
+          <p class="text-sm opacity-60 mt-1">
+            Set available_slots on your League Members record.
+          </p>
+        </div>
+      `;
+          return;
+        }
+
+        slots.forEach((slot, index) => {
+          const selectedQueen = seasonContestants.find(
+            (queen) => queen.id === slot.seasonContestantId,
+          );
+
+          const zone = document.createElement("div");
+          zone.className =
+            "min-h-36 bg-neutral-100 border border-dashed border-neutral-300 p-3 flex items-center justify-center";
+          zone.dataset.slotIndex = index;
+
+          zone.addEventListener("dragover", (e) => e.preventDefault());
+
+          zone.addEventListener("drop", (e) => {
+            e.preventDefault();
+
+            const seasonContestantId =
+              e.dataTransfer.getData("seasonContestantId");
+
+            if (!seasonContestantId) return;
+
+            slots = slots.map((slot) =>
+              slot.seasonContestantId === seasonContestantId
+                ? { ...slot, seasonContestantId: null }
+                : slot,
+            );
+
+            slots[index].seasonContestantId = seasonContestantId;
+
+            renderSlots();
+            renderAvailableQueens();
+          });
+
+          if (selectedQueen) {
+            zone.innerHTML = `
+          <div
+            draggable="true"
+            data-season-contestant-id="${selectedQueen.id}"
+            class="w-full cursor-grab"
+          >
+            ${
+              selectedQueen.image_url
+                ? `<img src="${selectedQueen.image_url}" class="w-full aspect-square object-cover bg-neutral-300" />`
+                : `<div class="w-full aspect-square bg-neutral-300"></div>`
+            }
+
+            <h3 class="font-black uppercase text-sm mt-2 leading-tight">
+              ${selectedQueen.name}
+            </h3>
+
+            <div class="flex justify-between items-center mt-1">
+              <p class="text-xs opacity-50 uppercase">Points</p>
+              <p class="font-black text-sm">${selectedQueen.points}</p>
+            </div>
+
+            <button
+              type="button"
+              data-clear-slot="${index}"
+              class="btn btn-xs rounded-none w-full mt-3 bg-base-100 border-neutral shadow-none uppercase font-black"
+            >
+              Remove
+            </button>
+          </div>
+        `;
+
+            zone
+              .querySelector("[draggable='true']")
+              .addEventListener("dragstart", (e) => {
+                e.dataTransfer.setData("seasonContestantId", selectedQueen.id);
+
+                setDragPreview(e, selectedQueen);
+              });
+
+            zone
+              .querySelector("[data-clear-slot]")
+              .addEventListener("click", () => {
+                slots[index].seasonContestantId = null;
+                renderSlots();
+                renderAvailableQueens();
+              });
+          } else {
+            zone.innerHTML = `
+          <div class="text-center">
+            <p class="font-black uppercase text-sm opacity-50">
+              Slot ${index + 1}
+            </p>
+            <p class="text-xs opacity-40 mt-1">Drag queen here</p>
+          </div>
+        `;
+          }
+
+          slotGrid.appendChild(zone);
+        });
+      }
+
+      function renderAvailableQueens() {
+        queenGrid.innerHTML = "";
+
+        const selectedIds = getSelectedIds();
+
+        const availableQueens = seasonContestants.filter(
+          (queen) => !selectedIds.includes(queen.id),
+        );
+
+        if (!availableQueens.length) {
+          queenGrid.innerHTML = `
+        <div class="bg-neutral-100 p-4 col-span-2 text-sm opacity-60">
+          No available queens.
+        </div>
+      `;
+          return;
+        }
+
+        availableQueens.forEach((queen) => {
+          const card = document.createElement("div");
+          card.draggable = true;
+          card.dataset.seasonContestantId = queen.id;
+          card.className = "bg-neutral-100 p-3 cursor-grab";
+
+          card.innerHTML = `
+        ${
+          queen.image_url
+            ? `<img src="${queen.image_url}" class="w-full aspect-square object-cover bg-neutral-300" />`
+            : `<div class="w-full aspect-square bg-neutral-300"></div>`
+        }
+
+        <h3 class="font-black uppercase text-sm mt-2 leading-tight">
+          ${queen.name}
+        </h3>
+
+        <div class="flex justify-between items-center mt-1">
+          <p class="text-xs opacity-50 uppercase">Points</p>
+          <p class="font-black text-sm">${queen.points}</p>
+        </div>
+      `;
+
+          card.addEventListener("dragstart", (e) => {
+            e.dataTransfer.setData("seasonContestantId", queen.id);
+
+            setDragPreview(e, queen);
+          });
+
+          queenGrid.appendChild(card);
+        });
+      }
+
+      async function saveRoster() {
+        saveRosterBtn.textContent = "Saving...";
+
+        try {
+          for (const assignment of activeAssignments) {
+            await updateRecord(TABLES.rosterAssignments, assignment.id, {
+              active: false,
+            });
+          }
+
+          const selectedIds = getSelectedIds();
+
+          for (const seasonContestantId of selectedIds) {
+            await createRecord(TABLES.rosterAssignments, {
+              member: [currentLeagueMember.id],
+              queen: [seasonContestantId],
+              episodes: availableEpisodeIds,
+              active: true,
+            });
+          }
+
+          saveRosterBtn.textContent = "Saved";
+          setTimeout(() => {
+            saveRosterBtn.textContent = "Save";
+          }, 1200);
+
+          await loadActiveRoster();
+          renderSlots();
+          renderAvailableQueens();
+        } catch (err) {
+          console.error(err);
+          saveRosterBtn.textContent = "Save";
+          alert(err.message);
+        }
+      }
+
+      async function initializePage() {
+        await loadLeagueContext();
+
+        if (!currentLeagueMember) {
+          slotGrid.innerHTML = `
+    <div class="bg-red-100 text-red-700 p-4 col-span-2">
+      Could not find your League Members record for this league.
+    </div>
+  `;
+          return;
+        }
+
+        if (!activeSeason) {
+          slotGrid.innerHTML = `
+    <div class="bg-red-100 text-red-700 p-4 col-span-2">
+      Could not load the league's active season.
+    </div>
+  `;
+          return;
+        }
+
+        await loadSeasonContestants();
+        await loadActiveRoster();
+
+        renderSlots();
+        renderAvailableQueens();
+      }
+
+      saveRosterBtn.addEventListener("click", saveRoster);
+
+      initializePage();
+    </script>
+  </body>
+</html>

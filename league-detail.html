@@ -1,0 +1,808 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <!-- tailwind -->
+    <link href="src/output.css" rel="stylesheet" />
+    <!-- fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,1..1000&display=swap"
+      rel="stylesheet"
+    />
+    <!-- icons -->
+    <link
+      rel="stylesheet"
+      href="https://cdn-uicons.flaticon.com/4.0.0/uicons-bold-rounded/css/uicons-bold-rounded.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn-uicons.flaticon.com/4.0.0/uicons-solid-straight/css/uicons-solid-straight.css"
+    />
+    <script
+      src="https://cdn.jsdelivr.net/npm/@tailwindplus/elements@1"
+      type="module"
+    ></script>
+  </head>
+  <body class="overflow-hidden font-gsf">
+    <a
+      id="draftButton"
+      class="fixed bottom-4 left-4 right-4 md:left-1/2 md:-translate-x-1/2 md:max-w-3xl btn rounded-none bg-neutral text-base-100 border-0 shadow-lg uppercase font-black h-12"
+    >
+      Draft / Trade Roster
+    </a>
+    <!--main container-->
+    <div class="h-screen">
+      <!--header-->
+      <div class="h-16 flex items-center px-4 justify-between">
+        <div>
+          <h1 class="font-black uppercase text-sm">
+            <span class="text-primary">Drag</span>Draft
+          </h1>
+        </div>
+        <div>
+          <a class="btn btn-square btn-sm bg-neutral rounded-none text-base-100"
+            ><i class="fi fi-br-menu-burger pt-1"></i
+          ></a>
+        </div>
+      </div>
+      <!--body-->
+      <div
+        class="flex-1 overflow-y-auto px-4 mt-4 w-full md:max-w-3xl md:mx-auto"
+      >
+        <!--page header-->
+        <div class="flex items-center gap-4">
+          <a
+            href="leagues.html"
+            class="btn btn-square btn-xs bg-base-100 text-neutral border-neutral shadow-none"
+          >
+            <i class="fi fi-br-angle-left pt-1"></i>
+          </a>
+          <h1 class="font-black uppercase text-2xl">League Name</h1>
+        </div>
+        <div role="tablist" class="tabs tabs-league tabs-border mt-2 w-full">
+          <a role="tab" data-tab="overview" class="tab tab-active">Overview</a>
+          <a role="tab" data-tab="roster" class="tab">My Roster</a>
+        </div>
+        <!--overview panel-->
+        <div id="overviewPanel" class="grid mt-6 gap-6">
+          <!--leaderboard-->
+          <div class="bg-neutral-100 p-4">
+            <div class="flex items-center justify-between">
+              <h2 class="font-black uppercase text-lg">Leaderboard</h2>
+
+              <span class="text-xs uppercase opacity-50 font-black">Top 3</span>
+            </div>
+
+            <div id="leaderboardList" class="mt-4 flex flex-col gap-2">
+              <div class="text-sm opacity-60 uppercase font-black">
+                Loading...
+              </div>
+            </div>
+          </div>
+          <!--recent episode-->
+
+          <div class="bg-neutral-100 p-4">
+            <div class="flex items-center justify-between">
+              <h2 class="font-black uppercase text-lg">Episode Results</h2>
+
+              <span
+                id="episodeStatus"
+                class="text-xs uppercase opacity-50 font-black"
+              >
+                Loading
+              </span>
+            </div>
+
+            <div id="episodeCard" class="mt-4">
+              <div class="text-sm opacity-60 uppercase font-black">
+                Loading...
+              </div>
+            </div>
+          </div>
+        </div>
+        <!--roster panel-->
+        <div id="rosterPanel" class="hidden mt-6">
+          <div id="rosterList" class="grid gap-3">
+            <div class="text-sm opacity-60 uppercase font-black">
+              Loading roster...
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      const AIRTABLE_TOKEN =
+        "patVP0kfX1Ch4uKWl.896c99262e92660d8728aba045b4e1cb0a3fdebd80cf3310df67f930323d66d6";
+      const BASE_ID = "appWSxdKSUmtWAIAw";
+
+      const TABLES = {
+        leagues: "Leagues",
+        leagueMembers: "League Members",
+        users: "Users",
+        episodes: "Episodes",
+        episodeResults: "Episode Results",
+        seasons: "Seasons",
+        seasonContestants: "Season Contestants",
+        queens: "Queens",
+        rosterAssignments: "Roster Assignments",
+        rosterPoints: "Roster Points",
+      };
+
+      const headers = {
+        Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+        "Content-Type": "application/json",
+      };
+
+      const params = new URLSearchParams(window.location.search);
+      const leagueId = params.get("league");
+
+      const leaderboardList = document.querySelector("#leaderboardList");
+      const pageTitle = document.querySelector(".page-header-title");
+
+      const currentUser = JSON.parse(localStorage.getItem("dragdraft_user"));
+
+      if (!currentUser?.id) {
+        window.location.href = "auth.html";
+      }
+
+      const overviewPanel = document.querySelector("#overviewPanel");
+      const rosterPanel = document.querySelector("#rosterPanel");
+      const rosterList = document.querySelector("#rosterList");
+
+      document.querySelectorAll(".tabs-league .tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          document
+            .querySelectorAll(".tabs-league .tab")
+            .forEach((t) => t.classList.remove("tab-active"));
+
+          tab.classList.add("tab-active");
+
+          const selectedTab = tab.dataset.tab;
+
+          overviewPanel.classList.toggle("hidden", selectedTab !== "overview");
+          rosterPanel.classList.toggle("hidden", selectedTab !== "roster");
+        });
+      });
+
+      async function setupDraftButton(league) {
+        const draftButton = document.querySelector("#draftButton");
+
+        draftButton.href = `roster-draft.html?league=${league.id}`;
+
+        const activeSeasonId = league.fields.active_season?.[0];
+
+        if (!activeSeasonId) {
+          lockDraftButton("No active season");
+          return;
+        }
+
+        const season = await getSeasonById(activeSeasonId);
+        const episodeIds = season?.fields.episodes || [];
+
+        const episodes = [];
+
+        for (const episodeId of episodeIds) {
+          const episode = await getEpisodeById(episodeId);
+          if (episode?.fields.air_date) episodes.push(episode);
+        }
+
+        const now = new Date();
+
+        const upcomingEpisodes = episodes
+          .filter((episode) => new Date(episode.fields.air_date) > now)
+          .sort(
+            (a, b) => new Date(a.fields.air_date) - new Date(b.fields.air_date),
+          );
+
+        if (!upcomingEpisodes.length) {
+          lockDraftButton("Draft locked");
+          return;
+        }
+
+        const nextEpisode = upcomingEpisodes[0];
+        const nextAirDate = new Date(nextEpisode.fields.air_date);
+
+        const lockDate = new Date(nextAirDate);
+
+        lockDate.setDate(lockDate.getDate() - 1);
+
+        lockDate.setHours(23, 59, 0, 0);
+
+        if (now >= lockDate) {
+          lockDraftButton("Draft locked");
+
+          return;
+        }
+
+        draftButton.classList.remove("opacity-50", "pointer-events-none");
+        draftButton.textContent = "Draft / Trade Roster";
+      }
+
+      function lockDraftButton(label) {
+        const draftButton = document.querySelector("#draftButton");
+
+        draftButton.removeAttribute("href");
+        draftButton.textContent = label;
+        draftButton.classList.add("opacity-50", "pointer-events-none");
+      }
+
+      async function getRosterAssignmentById(id) {
+        const formula = `RECORD_ID() = "${escapeFormulaValue(id)}"`;
+        const query = `?filterByFormula=${encodeURIComponent(formula)}`;
+        const records = await airtableFetch(TABLES.rosterAssignments, query);
+        return records[0] || null;
+      }
+
+      async function getRosterPointById(id) {
+        const formula = `RECORD_ID() = "${escapeFormulaValue(id)}"`;
+        const query = `?filterByFormula=${encodeURIComponent(formula)}`;
+        const records = await airtableFetch(TABLES.rosterPoints, query);
+        return records[0] || null;
+      }
+
+      async function getCurrentUserRecord() {
+        const formula = `RECORD_ID() = "${escapeFormulaValue(currentUser.id)}"`;
+        const query = `?filterByFormula=${encodeURIComponent(formula)}`;
+        const users = await airtableFetch(TABLES.users, query);
+        return users[0] || null;
+      }
+
+      async function getQueenNameById(recordId) {
+        // First try Queens table
+        let queen = await getRecordById(TABLES.queens, recordId);
+
+        if (queen?.fields?.name) {
+          return queen.fields.name;
+        }
+
+        // If that fails, try Season Contestants table
+        const seasonContestant = await getRecordById(
+          TABLES.seasonContestants,
+          recordId,
+        );
+
+        const queenId = seasonContestant?.fields?.queen?.[0];
+
+        if (!queenId) {
+          console.log("Could not resolve queen from:", recordId);
+          return "Unknown queen";
+        }
+
+        queen = await getRecordById(TABLES.queens, queenId);
+
+        return queen?.fields?.name || "Unknown queen";
+      }
+
+      async function getRosterAssignmentPoints(rosterAssignment) {
+        const rosterPointIds = rosterAssignment.fields.roster_points || [];
+        let total = 0;
+
+        for (const pointId of rosterPointIds) {
+          const point = await getRosterPointById(pointId);
+          total += Number(point?.fields.total_points || 0);
+        }
+
+        return total;
+      }
+
+      function renderRosterCard({ queenName, episodeCount, points }) {
+        const card = document.createElement("div");
+        card.className = "bg-neutral-100 p-4";
+
+        card.innerHTML = `
+    <div class="flex items-center justify-between gap-4">
+      <div>
+        <h2 class="font-black uppercase text-md leading-tight">
+          ${queenName}
+        </h2>
+        <p class="text-xs uppercase opacity-50 mt-1">
+          ${episodeCount} episode${episodeCount === 1 ? "" : "s"}
+        </p>
+      </div>
+
+      <div class="text-right">
+        <p class="text-[10px] uppercase opacity-50 font-black">Points</p>
+        <p class="font-black text-xl">${points}</p>
+      </div>
+    </div>
+  `;
+
+        rosterList.appendChild(card);
+      }
+
+      async function loadMyRoster(league) {
+        rosterList.innerHTML = `
+    <div class="bg-neutral-100 p-4 text-sm uppercase font-black opacity-60">
+      Loading roster...
+    </div>
+  `;
+
+        const userRecord = await getCurrentUserRecord();
+
+        if (!userRecord) {
+          localStorage.removeItem("dragdraft_user");
+          window.location.href = "auth.html";
+          return;
+        }
+
+        const activeSeasonId = league.fields.active_season?.[0];
+
+        if (!activeSeasonId) {
+          rosterList.innerHTML = `
+      <div class="bg-neutral-100 p-4">
+        <h2 class="font-black uppercase text-md">No active season</h2>
+        <p class="text-sm opacity-60 mt-1">
+          This league does not have an active season set.
+        </p>
+      </div>
+    `;
+          return;
+        }
+
+        const season = await getSeasonById(activeSeasonId);
+        const activeSeasonEpisodeIds = season?.fields.episodes || [];
+
+        const leagueMemberIds = league.fields.league_members || [];
+
+        let currentLeagueMember = null;
+
+        for (const leagueMemberId of leagueMemberIds) {
+          const leagueMember = await getLeagueMemberById(leagueMemberId);
+
+          if (!leagueMember) continue;
+
+          const memberUserId = leagueMember.fields.member?.[0];
+
+          if (memberUserId === userRecord.id) {
+            currentLeagueMember = leagueMember;
+            break;
+          }
+        }
+
+        const rosterAssignmentIds =
+          currentLeagueMember?.fields.roster_assignments || [];
+
+        if (!rosterAssignmentIds.length) {
+          rosterList.innerHTML = `
+      <div class="bg-neutral-100 p-4">
+        <h2 class="font-black uppercase text-md">No roster yet</h2>
+        <p class="text-sm opacity-60 mt-1">
+          You do not have any roster assignments yet.
+        </p>
+      </div>
+    `;
+          return;
+        }
+
+        const matchingAssignments = [];
+
+        for (const assignmentId of rosterAssignmentIds) {
+          const assignment = await getRosterAssignmentById(assignmentId);
+          if (!assignment) continue;
+
+          const assignmentEpisodeIds = assignment.fields.episodes || [];
+
+          const belongsToActiveSeason = assignmentEpisodeIds.some((episodeId) =>
+            activeSeasonEpisodeIds.includes(episodeId),
+          );
+
+          const isActive = assignment.fields.active === true;
+
+          if (belongsToActiveSeason && isActive) {
+            matchingAssignments.push(assignment);
+          }
+        }
+
+        rosterList.innerHTML = "";
+
+        if (!matchingAssignments.length) {
+          rosterList.innerHTML = `
+      <div class="bg-neutral-100 p-4">
+        <h2 class="font-black uppercase text-md">No active roster</h2>
+        <p class="text-sm opacity-60 mt-1">
+          No roster assignments found for this league's active season.
+        </p>
+      </div>
+    `;
+          return;
+        }
+
+        for (const assignment of matchingAssignments) {
+          const queenValue = assignment.fields.queen?.[0];
+
+          let queenName = "Unknown queen";
+
+          console.log("MATCHING ASSIGNMENTS:", matchingAssignments);
+
+          if (queenValue) {
+            if (queenValue.startsWith("rec")) {
+              queenName = await getQueenNameById(queenValue);
+            } else {
+              queenName = queenValue;
+            }
+          }
+          const episodeCount = assignment.fields.episodes?.length || 0;
+          const points = await getRosterAssignmentPoints(assignment);
+
+          renderRosterCard({
+            queenName,
+            episodeCount,
+            points,
+          });
+        }
+      }
+
+      async function getSeasonContestantById(id) {
+        const formula = `RECORD_ID() = "${escapeFormulaValue(id)}"`;
+        const query = `?filterByFormula=${encodeURIComponent(formula)}`;
+        const records = await airtableFetch(TABLES.seasonContestants, query);
+        return records[0] || null;
+      }
+
+      async function getRecordById(tableName, id) {
+        const res = await fetch(
+          `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(tableName)}/${id}`,
+
+          { headers },
+        );
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error("Airtable direct fetch error:", data);
+
+          return null;
+        }
+
+        return data;
+      }
+
+      async function getQueenById(id) {
+        return await getRecordById(TABLES.queens, id);
+      }
+
+      async function getQueenNameFromResult(result) {
+        const seasonContestantId = result.fields.season_contestant?.[0];
+
+        if (!seasonContestantId) return "Unknown queen";
+
+        const seasonContestant =
+          await getSeasonContestantById(seasonContestantId);
+        const queenId = seasonContestant?.fields.queen?.[0];
+
+        if (!queenId) return "Unknown queen";
+
+        const queen = await getQueenById(queenId);
+
+        return queen?.fields.name || "Unknown queen";
+      }
+
+      async function getSeasonById(id) {
+        const formula = `RECORD_ID() = "${escapeFormulaValue(id)}"`;
+
+        const query = `?filterByFormula=${encodeURIComponent(formula)}`;
+
+        const seasons = await airtableFetch(TABLES.seasons, query);
+
+        return seasons[0] || null;
+      }
+
+      async function getEpisodeById(id) {
+        const formula = `RECORD_ID() = "${escapeFormulaValue(id)}"`;
+        const query = `?filterByFormula=${encodeURIComponent(formula)}`;
+        const episodes = await airtableFetch(TABLES.episodes, query);
+        return episodes[0] || null;
+      }
+
+      async function getEpisodeResultById(id) {
+        const formula = `RECORD_ID() = "${escapeFormulaValue(id)}"`;
+        const query = `?filterByFormula=${encodeURIComponent(formula)}`;
+        const results = await airtableFetch(TABLES.episodeResults, query);
+        return results[0] || null;
+      }
+
+      function formatDate(dateString) {
+        if (!dateString) return "No air date";
+
+        const date = new Date(dateString);
+
+        return date.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
+      }
+
+      async function renderEpisodeCard(episode, hasAired) {
+        const episodeCard = document.querySelector("#episodeCard");
+        const episodeStatus = document.querySelector("#episodeStatus");
+
+        episodeStatus.textContent = hasAired ? "Most Recent" : "Next Up";
+
+        let winnerName = null;
+        let elimName = null;
+
+        if (hasAired) {
+          const resultIds = episode.fields.episode_results || [];
+
+          for (const resultId of resultIds) {
+            const result = await getEpisodeResultById(resultId);
+            if (!result) continue;
+
+            const placement = result.fields.placement;
+
+            if (placement === "WIN" && !winnerName) {
+              winnerName = await getQueenNameFromResult(result);
+            }
+
+            if (placement === "ELIM" && !elimName) {
+              elimName = await getQueenNameFromResult(result);
+            }
+          }
+        }
+
+        episodeCard.innerHTML = `
+    <div class="bg-base-100 p-3">
+      <h3 class="font-black uppercase text-md leading-tight">
+        ${episode.fields.name || "Untitled Episode"}
+      </h3>
+
+      <p class="text-xs opacity-60 uppercase mt-1">
+        ${formatDate(episode.fields.air_date)}
+      </p>
+
+      ${
+        hasAired
+          ? `
+            <div class="grid grid-cols-2 gap-2 mt-4">
+              <div>
+                <p class="text-[10px] uppercase opacity-50 font-black">Win</p>
+                <p class="font-black uppercase text-sm">
+                  ${winnerName || "Not entered"}
+                </p>
+              </div>
+
+              <div>
+                <p class="text-[10px] uppercase opacity-50 font-black">Elim</p>
+                <p class="font-black uppercase text-sm">
+                  ${elimName || "Not entered"}
+                </p>
+              </div>
+            </div>
+          `
+          : ""
+      }
+    </div>
+  `;
+      }
+
+      async function loadLeagueEpisode(league) {
+        const episodeCard = document.querySelector("#episodeCard");
+        const episodeStatus = document.querySelector("#episodeStatus");
+
+        const activeSeasonId = league.fields.active_season?.[0];
+
+        if (!activeSeasonId) {
+          episodeStatus.textContent = "None";
+          episodeCard.innerHTML = `
+      <div class="bg-base-100 p-3 text-sm opacity-60">
+        No active season set.
+      </div>
+    `;
+          return;
+        }
+
+        const season = await getSeasonById(activeSeasonId);
+        const episodeIds = season?.fields.episodes || [];
+
+        if (!episodeIds.length) {
+          episodeStatus.textContent = "None";
+          episodeCard.innerHTML = `
+      <div class="bg-base-100 p-3 text-sm opacity-60">
+        No episodes found for this season.
+      </div>
+    `;
+          return;
+        }
+
+        const episodes = [];
+
+        for (const episodeId of episodeIds) {
+          const episode = await getEpisodeById(episodeId);
+          if (episode) episodes.push(episode);
+        }
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const sortedEpisodes = episodes
+          .filter((ep) => ep.fields.air_date)
+          .sort(
+            (a, b) => new Date(a.fields.air_date) - new Date(b.fields.air_date),
+          );
+
+        const airedEpisodes = sortedEpisodes.filter((ep) => {
+          const airDate = new Date(ep.fields.air_date);
+          airDate.setHours(0, 0, 0, 0);
+          return airDate <= today;
+        });
+
+        const upcomingEpisodes = sortedEpisodes.filter((ep) => {
+          const airDate = new Date(ep.fields.air_date);
+          airDate.setHours(0, 0, 0, 0);
+          return airDate > today;
+        });
+
+        if (airedEpisodes.length) {
+          const mostRecentEpisode = airedEpisodes[airedEpisodes.length - 1];
+          await renderEpisodeCard(mostRecentEpisode, true);
+          return;
+        }
+
+        if (upcomingEpisodes.length) {
+          const nextEpisode = upcomingEpisodes[0];
+          await renderEpisodeCard(nextEpisode, false);
+          return;
+        }
+
+        episodeStatus.textContent = "None";
+        episodeCard.innerHTML = `
+    <div class="bg-base-100 p-3 text-sm opacity-60">
+      No episode with an air date found.
+    </div>
+  `;
+      }
+
+      function airtableUrl(tableName, params = "") {
+        return `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(tableName)}${params}`;
+      }
+
+      async function airtableFetch(tableName, params = "") {
+        const res = await fetch(airtableUrl(tableName, params), { headers });
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error(data);
+          throw new Error(`Airtable error loading ${tableName}`);
+        }
+
+        return data.records;
+      }
+
+      function escapeFormulaValue(value) {
+        return String(value).replace(/"/g, '\\"');
+      }
+
+      async function getLeagueById(id) {
+        const formula = `RECORD_ID() = "${escapeFormulaValue(id)}"`;
+        const query = `?filterByFormula=${encodeURIComponent(formula)}`;
+        const leagues = await airtableFetch(TABLES.leagues, query);
+        return leagues[0] || null;
+      }
+
+      async function getLeagueMemberById(id) {
+        const formula = `RECORD_ID() = "${escapeFormulaValue(id)}"`;
+        const query = `?filterByFormula=${encodeURIComponent(formula)}`;
+        const members = await airtableFetch(TABLES.leagueMembers, query);
+        return members[0] || null;
+      }
+
+      async function getUserById(id) {
+        const formula = `RECORD_ID() = "${escapeFormulaValue(id)}"`;
+        const query = `?filterByFormula=${encodeURIComponent(formula)}`;
+        const users = await airtableFetch(TABLES.users, query);
+        return users[0] || null;
+      }
+
+      function renderLeaderboard(members) {
+        if (!members.length) {
+          leaderboardList.innerHTML = `
+        <div class="bg-base-100 p-3 text-sm opacity-60">
+          No members found.
+        </div>
+      `;
+          return;
+        }
+
+        leaderboardList.innerHTML = "";
+
+        members.forEach((member, index) => {
+          const row = document.createElement("div");
+          row.className =
+            "bg-base-100 p-3 flex items-center justify-between gap-4";
+
+          row.innerHTML = `
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 bg-neutral text-base-100 flex items-center justify-center font-black">
+            ${index + 1}
+          </div>
+          <div>
+            <h3 class="font-black uppercase text-sm">
+              ${member.displayName}
+            </h3>
+            <p class="text-xs opacity-50 uppercase">Member</p>
+          </div>
+        </div>
+
+        <div class="font-black text-lg">
+          ${member.points}
+        </div>
+      `;
+
+          leaderboardList.appendChild(row);
+        });
+      }
+
+      async function loadLeaderboard() {
+        if (!leagueId) {
+          leaderboardList.innerHTML = `
+        <div class="bg-red-100 text-red-700 p-3 text-sm">
+          Missing league ID.
+        </div>
+      `;
+          return;
+        }
+
+        try {
+          const league = await getLeagueById(leagueId);
+
+          if (!league) {
+            throw new Error("League not found.");
+          }
+
+          await loadLeagueEpisode(league);
+          await loadMyRoster(league);
+          await setupDraftButton(league);
+
+          document.querySelector(
+            "h1.font-black.uppercase.text-2xl",
+          ).textContent = league.fields.name || "League";
+
+          const leagueMemberIds = league.fields.league_members || [];
+
+          const fullMembers = [];
+
+          for (const memberId of leagueMemberIds) {
+            const leagueMember = await getLeagueMemberById(memberId);
+            if (!leagueMember) continue;
+
+            const userId = leagueMember.fields.member?.[0];
+            let displayName = "Unknown User";
+
+            if (userId) {
+              const user = await getUserById(userId);
+              displayName =
+                user?.fields.display_name ||
+                user?.fields.name ||
+                "Unknown User";
+            }
+
+            fullMembers.push({
+              displayName,
+              points: Number(leagueMember.fields.season_points || 0),
+            });
+          }
+
+          const topThree = fullMembers
+            .sort((a, b) => b.points - a.points)
+            .slice(0, 3);
+
+          renderLeaderboard(topThree);
+        } catch (err) {
+          console.error(err);
+          leaderboardList.innerHTML = `
+        <div class="bg-red-100 text-red-700 p-3 text-sm">
+          ${err.message}
+        </div>
+      `;
+        }
+      }
+
+      loadLeaderboard();
+    </script>
+  </body>
+</html>
