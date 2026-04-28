@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="pink">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -26,9 +26,35 @@
           <span class="text-primary">Drag</span>Draft
         </h1>
 
-        <a class="btn btn-square btn-sm bg-neutral rounded-none text-base-100">
-          <i class="fi fi-br-menu-burger pt-1"></i>
-        </a>
+        <div class="dropdown dropdown-end">
+          <button
+            id="notificationsBtn"
+            tabindex="0"
+            class="btn btn-square btn-sm bg-neutral rounded-none text-base-100 relative"
+          >
+            <i class="fi fi-br-bell pt-1"></i>
+
+            <span
+              id="notificationCount"
+              class="hidden absolute -top-2 -right-2 min-w-5 h-5 px-1 bg-primary text-neutral text-[10px] font-black flex items-center justify-center rounded-full"
+            >
+              0
+            </span>
+          </button>
+
+          <div
+            tabindex="0"
+            class="dropdown-content z-50 mt-2 w-80 bg-base-100 shadow-xl border border-neutral-200"
+          >
+            <div class="p-3 border-b border-neutral-200">
+              <h2 class="font-black uppercase text-sm">Notifications</h2>
+            </div>
+
+            <div id="notificationsList" class="max-h-96 overflow-y-auto">
+              <div class="p-4 text-sm opacity-60">Loading...</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div
@@ -122,6 +148,7 @@
       const TABLES = {
         leagues: "Leagues",
         scoringRules: "Scoring Rules",
+        notifications: "notifications",
       };
 
       const headers = {
@@ -346,6 +373,162 @@
           modalMessage.textContent = err.message;
         }
       });
+
+      let currentNotifications = [];
+      let notificationsMarkedRead = false;
+
+      function updateNotificationCount(count) {
+        const notificationCount = document.querySelector("#notificationCount");
+
+        if (!notificationCount) return;
+
+        if (!count) {
+          notificationCount.classList.add("hidden");
+          notificationCount.textContent = "0";
+          return;
+        }
+
+        notificationCount.classList.remove("hidden");
+        notificationCount.textContent = count > 9 ? "9+" : count;
+      }
+
+      function formatNotificationDate(dateString) {
+        if (!dateString) return "";
+
+        return new Date(dateString).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        });
+      }
+
+      function renderNotifications(notifications) {
+        const notificationsList = document.querySelector("#notificationsList");
+
+        if (!notificationsList) return;
+
+        if (!notifications.length) {
+          notificationsList.innerHTML = `
+      <div class="p-4 text-sm opacity-60">
+        No notifications yet.
+      </div>
+    `;
+          return;
+        }
+
+        notificationsList.innerHTML = "";
+
+        notifications.forEach((notification) => {
+          const item = document.createElement("div");
+          item.className = "p-4 border-b border-neutral-200 last:border-b-0";
+
+          item.innerHTML = `
+      <div class="flex items-start justify-between gap-3">
+        <h3 class="font-black uppercase text-sm leading-tight">
+          ${notification.fields.subject || "Notification"}
+        </h3>
+
+        <span class="text-[10px] uppercase opacity-50 whitespace-nowrap">
+          ${formatNotificationDate(notification.fields.created_at)}
+        </span>
+      </div>
+
+      <p class="text-sm opacity-70 mt-1">
+        ${notification.fields.body_text || ""}
+      </p>
+    `;
+
+          notificationsList.appendChild(item);
+        });
+      }
+
+      async function updateRecord(tableName, id, fields) {
+        const res = await fetch(airtableUrl(tableName, `/${id}`), {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ fields }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error(data);
+          throw new Error(`Could not update ${tableName}.`);
+        }
+
+        return data;
+      }
+
+      async function getUserNotifications(userRecordId) {
+        const notifications = await airtableFetch(TABLES.notifications);
+
+        return notifications
+          .filter((notification) => {
+            const users = notification.fields.user || [];
+            const isUnread = notification.fields.read !== true;
+
+            return users.includes(userRecordId) && isUnread;
+          })
+          .sort((a, b) => {
+            return (
+              new Date(b.fields.created_at) - new Date(a.fields.created_at)
+            );
+          });
+      }
+
+      async function markNotificationsAsRead(notifications) {
+        for (const notification of notifications) {
+          await updateRecord(TABLES.notifications, notification.id, {
+            read: true,
+          });
+        }
+      }
+
+      async function loadNotifications() {
+        try {
+          const userRecord = await getCurrentUserRecord();
+
+          currentNotifications = await getUserNotifications(userRecord.id);
+
+          renderNotifications(currentNotifications);
+          updateNotificationCount(currentNotifications.length);
+        } catch (err) {
+          console.error("Could not load notifications:", err);
+
+          const notificationsList =
+            document.querySelector("#notificationsList");
+
+          if (notificationsList) {
+            notificationsList.innerHTML = `
+        <div class="p-4 text-sm text-red-700 bg-red-100">
+          Could not load notifications.
+        </div>
+      `;
+          }
+        }
+      }
+
+      function initializeNotifications() {
+        const notificationsDropdown =
+          document.querySelector(".dropdown-content");
+
+        if (!notificationsDropdown) return;
+
+        notificationsDropdown.addEventListener("focusin", async () => {
+          if (notificationsMarkedRead || !currentNotifications.length) return;
+
+          notificationsMarkedRead = true;
+
+          try {
+            await markNotificationsAsRead(currentNotifications);
+
+            currentNotifications = [];
+            renderNotifications([]);
+            updateNotificationCount(0);
+          } catch (err) {
+            console.error("Could not mark notifications as read:", err);
+          }
+        });
+      }
 
       loadScoringRules();
     </script>

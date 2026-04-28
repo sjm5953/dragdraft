@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="en" data-theme="pink">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Messages</title>
+    <link href="src/output.css" rel="stylesheet" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,1..1000&display=swap"
+      rel="stylesheet"
+    />
+
+    <link
+      rel="stylesheet"
+      href="https://cdn-uicons.flaticon.com/4.0.0/uicons-bold-rounded/css/uicons-bold-rounded.css"
+    />
+  </head>
+
+  <body class="overflow-hidden font-gsf">
+    <div class="h-screen flex flex-col overflow-hidden">
+      <!--header-->
+      <div
+        class="h-16 flex items-center px-4 justify-between shrink-0 bg-base-100 z-20"
+      >
+        <h1 class="font-black uppercase text-sm">
+          <span class="text-primary">Drag</span>Draft
+        </h1>
+
+        <a
+          href="leagues.html"
+          class="btn btn-square btn-sm bg-neutral rounded-none text-base-100"
+        >
+          <i class="fi fi-br-home pt-1"></i>
+        </a>
+      </div>
+
+      <!--conversation list view-->
+      <div
+        id="conversationListView"
+        class="flex-1 overflow-y-auto px-4 mt-4 w-full md:max-w-3xl md:mx-auto pb-6"
+      >
+        <div class="flex justify-between items-center">
+          <h1 class="font-black uppercase text-2xl">Messages</h1>
+
+          <button
+            id="openNewConversationModal"
+            class="btn btn-sm rounded-none bg-primary text-neutral border-0 shadow-none uppercase font-black"
+          >
+            New
+          </button>
+        </div>
+
+        <div id="conversationList" class="grid gap-3 mt-6">
+          <div class="bg-neutral-100 p-4 text-sm opacity-60">
+            Loading conversations...
+          </div>
+        </div>
+      </div>
+
+      <!--chat view-->
+      <div id="chatView" class="hidden flex-1 flex flex-col overflow-hidden">
+        <div class="px-4 mt-4 w-full md:max-w-3xl md:mx-auto shrink-0">
+          <div class="flex items-center gap-4">
+            <button
+              id="backToConversations"
+              class="btn btn-square btn-xs bg-base-100 text-neutral border-neutral shadow-none"
+            >
+              <i class="fi fi-br-angle-left pt-1"></i>
+            </button>
+
+            <h1 id="chatTitle" class="font-black uppercase text-2xl">
+              Conversation
+            </h1>
+          </div>
+        </div>
+
+        <div
+          id="chatMessages"
+          class="flex-1 overflow-y-auto px-4 py-4 w-full md:max-w-3xl md:mx-auto"
+        ></div>
+
+        <form
+          id="messageForm"
+          class="shrink-0 p-4 w-full md:max-w-3xl md:mx-auto flex gap-2 bg-base-100"
+        >
+          <input
+            id="messageInput"
+            class="input flex-1 rounded-none border-neutral-300"
+            placeholder="Type a message..."
+            required
+          />
+
+          <button
+            class="btn rounded-none bg-primary text-neutral border-0 shadow-none uppercase font-black"
+          >
+            Send
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!--new conversation modal-->
+    <dialog id="newConversationModal" class="modal">
+      <div class="modal-box rounded-none bg-base-100">
+        <h3 class="font-black uppercase text-lg">New Conversation</h3>
+
+        <form id="newConversationForm" class="mt-4">
+          <label class="fieldset-label uppercase font-black text-xs">
+            User
+          </label>
+
+          <select
+            id="recipientSelect"
+            required
+            class="select w-full rounded-none border-neutral-300"
+          >
+            <option value="">Choose user</option>
+          </select>
+
+          <label class="fieldset-label uppercase font-black text-xs mt-4">
+            Message
+          </label>
+
+          <textarea
+            id="firstMessageInput"
+            required
+            class="textarea w-full rounded-none border-neutral-300"
+            placeholder="Start the conversation..."
+          ></textarea>
+
+          <p id="newConversationMessage" class="text-sm mt-3 opacity-70"></p>
+
+          <div class="flex justify-end gap-2 mt-6">
+            <button
+              type="button"
+              id="closeNewConversationModal"
+              class="btn btn-sm rounded-none bg-base-100 border-neutral shadow-none uppercase font-black"
+            >
+              Cancel
+            </button>
+
+            <button
+              class="btn btn-sm rounded-none bg-primary text-neutral border-0 shadow-none uppercase font-black"
+            >
+              Start
+            </button>
+          </div>
+        </form>
+      </div>
+    </dialog>
+
+    <script>
+      const AIRTABLE_TOKEN =
+        "patVP0kfX1Ch4uKWl.896c99262e92660d8728aba045b4e1cb0a3fdebd80cf3310df67f930323d66d6";
+      const BASE_ID = "appWSxdKSUmtWAIAw";
+
+      const TABLES = {
+        users: "Users",
+        conversations: "Conversations",
+        chatMessages: "Chat Messages",
+      };
+
+      const headers = {
+        Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+        "Content-Type": "application/json",
+      };
+
+      const currentUser = JSON.parse(localStorage.getItem("dragdraft_user"));
+
+      if (!currentUser?.id) {
+        window.location.href = "auth.html";
+      }
+
+      const conversationListView = document.querySelector(
+        "#conversationListView",
+      );
+      const chatView = document.querySelector("#chatView");
+      const conversationList = document.querySelector("#conversationList");
+      const chatMessages = document.querySelector("#chatMessages");
+      const chatTitle = document.querySelector("#chatTitle");
+      const messageForm = document.querySelector("#messageForm");
+      const messageInput = document.querySelector("#messageInput");
+
+      const newConversationModal = document.querySelector(
+        "#newConversationModal",
+      );
+      const openNewConversationModal = document.querySelector(
+        "#openNewConversationModal",
+      );
+      const closeNewConversationModal = document.querySelector(
+        "#closeNewConversationModal",
+      );
+      const newConversationForm = document.querySelector(
+        "#newConversationForm",
+      );
+      const recipientSelect = document.querySelector("#recipientSelect");
+      const firstMessageInput = document.querySelector("#firstMessageInput");
+      const newConversationMessage = document.querySelector(
+        "#newConversationMessage",
+      );
+
+      let currentUserRecord = null;
+      let allUsers = [];
+      let conversations = [];
+      let activeConversation = null;
+
+      function airtableUrl(tableName, extra = "") {
+        return `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(tableName)}${extra}`;
+      }
+
+      async function airtableFetch(tableName, params = "") {
+        const res = await fetch(airtableUrl(tableName, params), { headers });
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error(data);
+          throw new Error(`Airtable error loading ${tableName}`);
+        }
+
+        return data.records;
+      }
+
+      async function getRecordById(tableName, id) {
+        const res = await fetch(airtableUrl(tableName, `/${id}`), { headers });
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error(data);
+          return null;
+        }
+
+        return data;
+      }
+
+      async function createRecord(tableName, fields) {
+        const res = await fetch(airtableUrl(tableName), {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ fields }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error(data);
+          throw new Error(`Could not create record in ${tableName}.`);
+        }
+
+        return data;
+      }
+
+      function escapeFormulaValue(value) {
+        return String(value).replace(/"/g, '\\"');
+      }
+
+      async function getCurrentUserRecord() {
+        const formula = `RECORD_ID() = "${escapeFormulaValue(currentUser.id)}"`;
+        const params = `?filterByFormula=${encodeURIComponent(formula)}`;
+        const users = await airtableFetch(TABLES.users, params);
+        return users[0] || null;
+      }
+
+      function getUserDisplayName(userId) {
+        const user = allUsers.find((u) => u.id === userId);
+
+        return (
+          user?.fields?.display_name ||
+          user?.fields?.name ||
+          user?.fields?.email ||
+          "Unknown User"
+        );
+      }
+
+      function getConversationTitle(conversation) {
+        const participants = conversation.fields.participants || [];
+
+        const otherUsers = participants.filter(
+          (participantId) => participantId !== currentUserRecord.id,
+        );
+
+        if (!otherUsers.length) return "Me";
+
+        return otherUsers.map(getUserDisplayName).join(", ");
+      }
+
+      function formatMessageDate(dateString) {
+        if (!dateString) return "";
+
+        return new Date(dateString).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        });
+      }
+
+      async function loadUsers() {
+        allUsers = await airtableFetch(TABLES.users);
+
+        recipientSelect.innerHTML = `<option value="">Choose user</option>`;
+
+        allUsers
+          .filter((user) => user.id !== currentUserRecord.id)
+          .sort((a, b) => {
+            const aName = a.fields.display_name || a.fields.name || "";
+            const bName = b.fields.display_name || b.fields.name || "";
+            return aName.localeCompare(bName);
+          })
+          .forEach((user) => {
+            const option = document.createElement("option");
+            option.value = user.id;
+            option.textContent =
+              user.fields.display_name || user.fields.name || user.fields.email;
+            recipientSelect.appendChild(option);
+          });
+      }
+
+      async function loadConversations() {
+        conversationList.innerHTML = `
+          <div class="bg-neutral-100 p-4 text-sm opacity-60">
+            Loading conversations...
+          </div>
+        `;
+
+        const allConversations = await airtableFetch(TABLES.conversations);
+
+        conversations = allConversations
+          .filter((conversation) => {
+            const participants = conversation.fields.participants || [];
+            return participants.includes(currentUserRecord.id);
+          })
+          .sort((a, b) => {
+            return new Date(b.createdTime) - new Date(a.createdTime);
+          });
+
+        renderConversationList();
+      }
+
+      function renderConversationList() {
+        conversationList.innerHTML = "";
+
+        if (!conversations.length) {
+          conversationList.innerHTML = `
+            <div class="bg-neutral-100 p-4">
+              <h2 class="font-black uppercase text-md">No conversations yet</h2>
+              <p class="text-sm opacity-60 mt-1">
+                Start a conversation to message another player.
+              </p>
+            </div>
+          `;
+          return;
+        }
+
+        conversations.forEach((conversation) => {
+          const card = document.createElement("button");
+          card.type = "button";
+          card.className =
+            "bg-neutral-100 p-4 text-left flex items-center justify-between gap-4 hover:bg-neutral-200 transition";
+
+          const messageCount = conversation.fields.messages?.length || 0;
+
+          card.innerHTML = `
+            <div>
+              <h2 class="font-black uppercase text-md leading-tight">
+                ${getConversationTitle(conversation)}
+              </h2>
+              <p class="text-xs uppercase opacity-50 mt-1">
+                ${messageCount} message${messageCount === 1 ? "" : "s"}
+              </p>
+            </div>
+
+            <i class="fi fi-br-angle-right text-sm opacity-50"></i>
+          `;
+
+          card.addEventListener("click", () => {
+            openConversation(conversation.id);
+          });
+
+          conversationList.appendChild(card);
+        });
+      }
+
+      async function openConversation(conversationId) {
+        activeConversation = await getRecordById(
+          TABLES.conversations,
+          conversationId,
+        );
+
+        if (!activeConversation) return;
+
+        chatTitle.textContent = getConversationTitle(activeConversation);
+
+        conversationListView.classList.add("hidden");
+        chatView.classList.remove("hidden");
+
+        await loadConversationMessages(activeConversation);
+      }
+
+      async function loadConversationMessages(conversation) {
+        chatMessages.innerHTML = `
+          <div class="text-sm opacity-60 uppercase font-black">
+            Loading messages...
+          </div>
+        `;
+
+        const messageIds = conversation.fields.messages || [];
+        const messages = [];
+
+        for (const messageId of messageIds) {
+          const message = await getRecordById(TABLES.chatMessages, messageId);
+          if (message) messages.push(message);
+        }
+
+        messages.sort((a, b) => {
+          return (
+            new Date(a.fields.created_at || a.createdTime) -
+            new Date(b.fields.created_at || b.createdTime)
+          );
+        });
+
+        renderChatMessages(messages);
+      }
+
+      function renderChatMessages(messages) {
+        chatMessages.innerHTML = "";
+
+        if (!messages.length) {
+          chatMessages.innerHTML = `
+            <div class="text-center text-sm opacity-60 mt-10">
+              No messages yet.
+            </div>
+          `;
+          return;
+        }
+
+        messages.forEach((message) => {
+          const senderId = message.fields.sender?.[0];
+          const isMine = senderId === currentUserRecord.id;
+
+          const bubble = document.createElement("div");
+          bubble.className = isMine ? "chat chat-end" : "chat chat-start";
+
+          bubble.innerHTML = `
+            <div class="chat-header text-xs opacity-60 mb-1">
+              ${isMine ? "You" : getUserDisplayName(senderId)}
+              <time class="ml-1">${formatMessageDate(
+                message.fields.created_at || message.createdTime,
+              )}</time>
+            </div>
+
+            <div class="chat-bubble ${isMine ? "chat-bubble-primary" : ""}">
+              ${message.fields.body_text || ""}
+            </div>
+          `;
+
+          chatMessages.appendChild(bubble);
+        });
+
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+
+      async function sendMessage(conversationId, bodyText) {
+        await createRecord(TABLES.chatMessages, {
+          conversation: [conversationId],
+          sender: [currentUserRecord.id],
+          body_text: bodyText,
+        });
+
+        activeConversation = await getRecordById(
+          TABLES.conversations,
+          conversationId,
+        );
+
+        await loadConversationMessages(activeConversation);
+      }
+
+      document
+        .querySelector("#backToConversations")
+        .addEventListener("click", async () => {
+          chatView.classList.add("hidden");
+          conversationListView.classList.remove("hidden");
+          activeConversation = null;
+          await loadConversations();
+        });
+
+      messageForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        if (!activeConversation) return;
+
+        const bodyText = messageInput.value.trim();
+        if (!bodyText) return;
+
+        messageInput.value = "";
+
+        await sendMessage(activeConversation.id, bodyText);
+      });
+
+      openNewConversationModal.addEventListener("click", () => {
+        recipientSelect.value = "";
+        firstMessageInput.value = "";
+        newConversationMessage.textContent = "";
+        newConversationModal.showModal();
+      });
+
+      closeNewConversationModal.addEventListener("click", () => {
+        newConversationModal.close();
+      });
+
+      newConversationForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const recipientId = recipientSelect.value;
+        const bodyText = firstMessageInput.value.trim();
+
+        if (!recipientId || !bodyText) return;
+
+        newConversationMessage.textContent = "Starting conversation...";
+
+        try {
+          const conversation = await createRecord(TABLES.conversations, {
+            participants: [currentUserRecord.id, recipientId],
+          });
+
+          await createRecord(TABLES.chatMessages, {
+            conversation: [conversation.id],
+            sender: [currentUserRecord.id],
+            body_text: bodyText,
+          });
+
+          newConversationModal.close();
+
+          await loadConversations();
+          await openConversation(conversation.id);
+        } catch (err) {
+          console.error(err);
+          newConversationMessage.textContent = err.message;
+        }
+      });
+
+      async function initializePage() {
+        currentUserRecord = await getCurrentUserRecord();
+
+        if (!currentUserRecord) {
+          localStorage.removeItem("dragdraft_user");
+          window.location.href = "auth.html";
+          return;
+        }
+
+        await loadUsers();
+        await loadConversations();
+      }
+
+      initializePage();
+    </script>
+  </body>
+</html>

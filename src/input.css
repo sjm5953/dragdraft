@@ -1,12 +1,12 @@
 @import "tailwindcss";
-@plugin "daisyui";
+ @plugin "daisyui";
 
 @theme {
     --font-gsf: "Google Sans Flex";
 }
 
 @plugin "daisyui/theme" {
-  name: "lime";
+  name: "pink";
   default: true;
   --color-primary: var(--color-rose-300);
   --color-neutral: var(--color-neutral-900);
