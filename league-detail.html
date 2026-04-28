@@ -30,14 +30,16 @@
   <body class="overflow-hidden font-gsf">
     <a
       id="draftButton"
-      class="fixed bottom-4 left-4 right-4 md:left-1/2 md:-translate-x-1/2 md:max-w-3xl btn rounded-none bg-neutral text-base-100 border-0 shadow-lg uppercase font-black h-12"
+      class="fixed bottom-4 left-4 right-4 md:left-1/2 md:-translate-x-1/2 md:max-w-3xl btn rounded-none bg-neutral text-base-100 border-0 shadow-lg uppercase font-black h-12 z-50"
     >
       Draft / Trade Roster
     </a>
     <!--main container-->
-    <div class="h-screen">
+    <div class="h-screen flex flex-col overflow-hidden">
       <!--header-->
-      <div class="h-16 flex items-center px-4 justify-between">
+      <div
+        class="h-16 flex items-center px-4 justify-between shrink-0 bg-base-100 z-20"
+      >
         <div>
           <h1 class="font-black uppercase text-sm">
             <span class="text-primary">Drag</span>Draft
@@ -51,7 +53,7 @@
       </div>
       <!--body-->
       <div
-        class="flex-1 overflow-y-auto px-4 mt-4 w-full md:max-w-3xl md:mx-auto"
+        class="flex-1 overflow-y-auto px-4 mt-4 w-full md:max-w-3xl md:mx-auto pb-24"
       >
         <!--page header-->
         <div class="flex items-center gap-4">
@@ -66,6 +68,9 @@
         <div role="tablist" class="tabs tabs-league tabs-border mt-2 w-full">
           <a role="tab" data-tab="overview" class="tab tab-active">Overview</a>
           <a role="tab" data-tab="roster" class="tab">My Roster</a>
+          <a role="tab" data-tab="admin" id="adminTab" class="tab hidden"
+            >Admin</a
+          >
         </div>
         <!--overview panel-->
         <div id="overviewPanel" class="grid mt-6 gap-6">
@@ -84,7 +89,6 @@
             </div>
           </div>
           <!--recent episode-->
-
           <div class="bg-neutral-100 p-4">
             <div class="flex items-center justify-between">
               <h2 class="font-black uppercase text-lg">Episode Results</h2>
@@ -96,7 +100,6 @@
                 Loading
               </span>
             </div>
-
             <div id="episodeCard" class="mt-4">
               <div class="text-sm opacity-60 uppercase font-black">
                 Loading...
@@ -106,10 +109,45 @@
         </div>
         <!--roster panel-->
         <div id="rosterPanel" class="hidden mt-6">
+          <div class="bg-neutral text-base-100 p-4 mb-4">
+            <p class="text-xs uppercase opacity-60 font-black">
+              My Season Points
+            </p>
+
+            <h2 id="mySeasonPoints" class="font-black text-3xl">0</h2>
+          </div>
+
+          <h2 class="font-black uppercase text-lg mb-3">Current Roster</h2>
           <div id="rosterList" class="grid gap-3">
             <div class="text-sm opacity-60 uppercase font-black">
               Loading roster...
             </div>
+          </div>
+          <h2 class="font-black uppercase text-lg mt-8 mb-3">Former Queens</h2>
+
+          <div id="formerRosterList" class="grid gap-3">
+            <div class="text-sm opacity-60 uppercase font-black">
+              Loading former queens...
+            </div>
+          </div>
+        </div>
+        <!--admin panel-->
+        <div id="adminPanel" class="hidden mt-6">
+          <div class="grid gap-3">
+            <a
+              id="scoringRulesLink"
+              class="bg-neutral-100 p-4 flex items-center justify-between text-neutral no-underline"
+            >
+              <div>
+                <h2 class="font-black uppercase text-md">Scoring Rules</h2>
+
+                <p class="text-xs uppercase opacity-50 mt-1">
+                  Edit this league's point values
+                </p>
+              </div>
+
+              <i class="fi fi-br-angle-right text-sm opacity-50"></i>
+            </a>
           </div>
         </div>
       </div>
@@ -153,6 +191,13 @@
       const rosterPanel = document.querySelector("#rosterPanel");
       const rosterList = document.querySelector("#rosterList");
 
+      const adminTab = document.querySelector("#adminTab");
+      const adminPanel = document.querySelector("#adminPanel");
+      const scoringRulesLink = document.querySelector("#scoringRulesLink");
+
+      const mySeasonPoints = document.querySelector("#mySeasonPoints");
+      const formerRosterList = document.querySelector("#formerRosterList");
+
       document.querySelectorAll(".tabs-league .tab").forEach((tab) => {
         tab.addEventListener("click", () => {
           document
@@ -165,8 +210,41 @@
 
           overviewPanel.classList.toggle("hidden", selectedTab !== "overview");
           rosterPanel.classList.toggle("hidden", selectedTab !== "roster");
+          adminPanel.classList.toggle("hidden", selectedTab !== "admin");
         });
       });
+
+      async function setupAdminTab(league) {
+        scoringRulesLink.href = `scoring-rules.html?league=${league.id}`;
+
+        const userRecord = await getCurrentUserRecord();
+        const leagueOwnerValues = league.fields.league_owner || [];
+
+        const activeUserIds = [userRecord?.id, currentUser?.id].filter(Boolean);
+        const activeUserNames = [
+          userRecord?.fields?.name,
+          userRecord?.fields?.display_name,
+          currentUser?.name,
+          currentUser?.display_name,
+        ].filter(Boolean);
+
+        const isOwner = leagueOwnerValues.some((ownerValue) => {
+          return (
+            activeUserIds.includes(ownerValue) ||
+            activeUserNames.includes(ownerValue)
+          );
+        });
+
+        if (isOwner) {
+          adminTab.classList.remove("hidden");
+        } else {
+          adminTab.classList.add("hidden");
+        }
+
+        console.log("League owner values:", leagueOwnerValues);
+        console.log("Current user:", userRecord);
+        console.log("Is owner:", isOwner);
+      }
 
       async function setupDraftButton(league) {
         const draftButton = document.querySelector("#draftButton");
@@ -289,7 +367,12 @@
         return total;
       }
 
-      function renderRosterCard({ queenName, episodeCount, points }) {
+      function renderRosterCard({
+        queenName,
+        episodeCount,
+        points,
+        target = rosterList,
+      }) {
         const card = document.createElement("div");
         card.className = "bg-neutral-100 p-4";
 
@@ -311,13 +394,19 @@
     </div>
   `;
 
-        rosterList.appendChild(card);
+        target.appendChild(card);
       }
 
       async function loadMyRoster(league) {
         rosterList.innerHTML = `
     <div class="bg-neutral-100 p-4 text-sm uppercase font-black opacity-60">
       Loading roster...
+    </div>
+  `;
+
+        formerRosterList.innerHTML = `
+    <div class="bg-neutral-100 p-4 text-sm uppercase font-black opacity-60">
+      Loading former queens...
     </div>
   `;
 
@@ -340,6 +429,7 @@
         </p>
       </div>
     `;
+          formerRosterList.innerHTML = "";
           return;
         }
 
@@ -352,7 +442,6 @@
 
         for (const leagueMemberId of leagueMemberIds) {
           const leagueMember = await getLeagueMemberById(leagueMemberId);
-
           if (!leagueMember) continue;
 
           const memberUserId = leagueMember.fields.member?.[0];
@@ -366,6 +455,10 @@
         const rosterAssignmentIds =
           currentLeagueMember?.fields.roster_assignments || [];
 
+        mySeasonPoints.textContent = Number(
+          currentLeagueMember?.fields.season_points || 0,
+        );
+
         if (!rosterAssignmentIds.length) {
           rosterList.innerHTML = `
       <div class="bg-neutral-100 p-4">
@@ -375,10 +468,17 @@
         </p>
       </div>
     `;
+
+          formerRosterList.innerHTML = `
+      <div class="bg-neutral-100 p-4 text-sm opacity-60">
+        No former queens yet.
+      </div>
+    `;
           return;
         }
 
-        const matchingAssignments = [];
+        const activeAssignments = [];
+        const formerAssignments = [];
 
         for (const assignmentId of rosterAssignmentIds) {
           const assignment = await getRosterAssignmentById(assignmentId);
@@ -390,16 +490,21 @@
             activeSeasonEpisodeIds.includes(episodeId),
           );
 
+          if (!belongsToActiveSeason) continue;
+
           const isActive = assignment.fields.active === true;
 
-          if (belongsToActiveSeason && isActive) {
-            matchingAssignments.push(assignment);
+          if (isActive) {
+            activeAssignments.push(assignment);
+          } else {
+            formerAssignments.push(assignment);
           }
         }
 
         rosterList.innerHTML = "";
+        formerRosterList.innerHTML = "";
 
-        if (!matchingAssignments.length) {
+        if (!activeAssignments.length) {
           rosterList.innerHTML = `
       <div class="bg-neutral-100 p-4">
         <h2 class="font-black uppercase text-md">No active roster</h2>
@@ -408,15 +513,12 @@
         </p>
       </div>
     `;
-          return;
         }
 
-        for (const assignment of matchingAssignments) {
+        for (const assignment of activeAssignments) {
           const queenValue = assignment.fields.queen?.[0];
 
           let queenName = "Unknown queen";
-
-          console.log("MATCHING ASSIGNMENTS:", matchingAssignments);
 
           if (queenValue) {
             if (queenValue.startsWith("rec")) {
@@ -425,6 +527,7 @@
               queenName = queenValue;
             }
           }
+
           const episodeCount = assignment.fields.episodes?.length || 0;
           const points = await getRosterAssignmentPoints(assignment);
 
@@ -432,6 +535,40 @@
             queenName,
             episodeCount,
             points,
+            target: rosterList,
+          });
+        }
+
+        if (!formerAssignments.length) {
+          formerRosterList.innerHTML = `
+      <div class="bg-neutral-100 p-4 text-sm opacity-60">
+        No former queens yet.
+      </div>
+    `;
+          return;
+        }
+
+        for (const assignment of formerAssignments) {
+          const queenValue = assignment.fields.queen?.[0];
+
+          let queenName = "Unknown queen";
+
+          if (queenValue) {
+            if (queenValue.startsWith("rec")) {
+              queenName = await getQueenNameById(queenValue);
+            } else {
+              queenName = queenValue;
+            }
+          }
+
+          const episodeCount = assignment.fields.episodes?.length || 0;
+          const points = await getRosterAssignmentPoints(assignment);
+
+          renderRosterCard({
+            queenName,
+            episodeCount,
+            points,
+            target: formerRosterList,
           });
         }
       }
@@ -757,6 +894,7 @@
           await loadLeagueEpisode(league);
           await loadMyRoster(league);
           await setupDraftButton(league);
+          await setupAdminTab(league);
 
           document.querySelector(
             "h1.font-black.uppercase.text-2xl",

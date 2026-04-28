@@ -113,7 +113,7 @@
       let currentLeague = null;
       let currentLeagueMember = null;
       let activeSeason = null;
-      let availableEpisodeIds = [];
+      let nextEpisodeId = null;
       let seasonContestants = [];
       let activeAssignments = [];
       let slots = [];
@@ -266,22 +266,22 @@
           if (episode) episodes.push(episode);
         }
 
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const now = new Date();
 
-        availableEpisodeIds = episodes
+        const upcomingEpisodes = episodes
           .filter((episode) => {
-            if (!episode.fields.air_date) return true;
-
-            const airDate = new Date(episode.fields.air_date);
-            airDate.setHours(0, 0, 0, 0);
-
-            return airDate >= today;
+            if (!episode.fields.air_date) return false;
+            return new Date(episode.fields.air_date) > now;
           })
-          .map((episode) => episode.id);
+          .sort(
+            (a, b) => new Date(a.fields.air_date) - new Date(b.fields.air_date),
+          );
 
-        if (!availableEpisodeIds.length) {
-          availableEpisodeIds = episodeIds;
+        nextEpisodeId = upcomingEpisodes[0]?.id || null;
+
+        if (!nextEpisodeId) {
+          saveRosterBtn.disabled = true;
+          saveRosterBtn.textContent = "No Upcoming Episode";
         }
       }
 
@@ -510,27 +510,59 @@
       }
 
       async function saveRoster() {
+        if (!nextEpisodeId) {
+          alert("No upcoming episode found.");
+          return;
+        }
+
         saveRosterBtn.textContent = "Saving...";
 
         try {
-          for (const assignment of activeAssignments) {
-            await updateRecord(TABLES.rosterAssignments, assignment.id, {
-              active: false,
-            });
-          }
-
           const selectedIds = getSelectedIds();
 
-          for (const seasonContestantId of selectedIds) {
+          for (const assignment of activeAssignments) {
+            const assignmentQueenId = assignment.fields.queen?.[0];
+            const existingEpisodeIds = assignment.fields.episodes || [];
+
+            const isStillSelected = selectedIds.includes(assignmentQueenId);
+
+            if (isStillSelected) {
+              const updatedEpisodeIds = existingEpisodeIds.includes(
+                nextEpisodeId,
+              )
+                ? existingEpisodeIds
+                : [...existingEpisodeIds, nextEpisodeId];
+
+              await updateRecord(TABLES.rosterAssignments, assignment.id, {
+                episodes: updatedEpisodeIds,
+                active: true,
+              });
+            } else {
+              await updateRecord(TABLES.rosterAssignments, assignment.id, {
+                active: false,
+              });
+            }
+          }
+
+          const existingActiveQueenIds = activeAssignments
+            .map((assignment) => assignment.fields.queen?.[0])
+            .filter(Boolean);
+
+          const newQueenIds = selectedIds.filter(
+            (queenId) => !existingActiveQueenIds.includes(queenId),
+          );
+
+          for (const seasonContestantId of newQueenIds) {
             await createRecord(TABLES.rosterAssignments, {
               member: [currentLeagueMember.id],
               queen: [seasonContestantId],
-              episodes: availableEpisodeIds,
+              episodes: [nextEpisodeId],
               active: true,
             });
           }
 
           saveRosterBtn.textContent = "Saved";
+
           setTimeout(() => {
             saveRosterBtn.textContent = "Save";
           }, 1200);
