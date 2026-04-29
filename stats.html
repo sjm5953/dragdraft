@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en" data-theme="pink">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <!-- tailwind -->
+    <link href="src/output.css" rel="stylesheet" />
+    <!-- fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,1..1000&display=swap"
+      rel="stylesheet"
+    />
+    <!-- icons -->
+    <link
+      rel="stylesheet"
+      href="https://cdn-uicons.flaticon.com/4.0.0/uicons-bold-rounded/css/uicons-bold-rounded.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn-uicons.flaticon.com/4.0.0/uicons-solid-straight/css/uicons-solid-straight.css"
+    />
+    <script
+      src="https://cdn.jsdelivr.net/npm/@tailwindplus/elements@1"
+      type="module"
+    ></script>
+  </head>
+  <body class="overflow-hidden font-gsf">
+    <!--dock-->
+    <div
+      class="dock dock-lg z-50 bg-base-100 border-t border-neutral-200 md:hidden"
+    >
+      <a href="leagues.html" class="dock-active">
+        <i class="fi fi-br-trophy pt-1"></i>
+        <span class="dock-label">Leagues</span>
+      </a>
+
+      <a href="stats.html">
+        <i class="fi fi-br-chart-histogram pt-1"></i>
+        <span class="dock-label">Stats</span>
+      </a>
+
+      <a href="trivia.html">
+        <i class="fi fi-br-interrogation pt-1"></i>
+        <span class="dock-label">Trivia</span>
+      </a>
+
+      <a id="profileDockLink" href="profile.html">
+        <i class="fi fi-br-user pt-1"></i>
+        <span class="dock-label">Profile</span>
+      </a>
+    </div>
+    <!--main container-->
+    <div class="h-screen flex flex-col overflow-hidden">
+      <!--header-->
+      <div class="h-16 flex items-center px-4 justify-between">
+        <div>
+          <h1 class="font-black uppercase text-sm">
+            <span class="text-primary">Drag</span>Draft
+          </h1>
+        </div>
+        <div class="flex gap-2">
+          <div class="dropdown dropdown-end">
+            <button
+              id="notificationsBtn"
+              tabindex="0"
+              class="btn btn-square btn-sm bg-neutral rounded-none text-base-100 relative border-0 shadow-none"
+            >
+              <i class="fi fi-br-bell pt-1"></i>
+
+              <span
+                id="notificationCount"
+                class="hidden absolute -top-2 -right-2 min-w-5 h-5 px-1 bg-primary text-neutral text-[10px] font-black flex items-center justify-center rounded-full"
+              >
+                0
+              </span>
+            </button>
+
+            <div
+              tabindex="0"
+              class="dropdown-content z-50 mt-2 w-80 bg-base-100 shadow-xl border border-neutral-200"
+            >
+              <div class="p-3 border-b border-neutral-200">
+                <h2 class="font-black uppercase text-sm">Notifications</h2>
+              </div>
+
+              <div id="notificationsList" class="max-h-96 overflow-y-auto">
+                <div class="p-4 text-sm opacity-60">Loading...</div>
+              </div>
+            </div>
+          </div>
+          <a
+            href="conversations.html"
+            class="btn btn-square btn-sm bg-neutral text-base-100 border-0 shadow-none rounded-none"
+            ><i class="fi fi-br-comment-dots pt-1"></i
+          ></a>
+        </div>
+      </div>
+      <!--body-->
+      <div
+        class="flex-1 flex flex-col overflow-hidden px-4 mt-4 w-full md:max-w-3xl md:mx-auto pb-22"
+      >
+        <select
+          id="browseType"
+          class="select font-black uppercase text-2xl h-14 border-0 focus:outline-none focus:ring-0 px-0"
+        >
+          <option value="seasons" selected>Seasons</option>
+
+          <option value="queens">Queens</option>
+        </select>
+
+        <div class="flex flex-col pt-2">
+          <label class="input rounded-none h-12 outline-0">
+            <i class="fi fi-br-search pt-1"></i>
+
+            <input id="searchInput" type="search" class="grow outline-0" />
+          </label>
+        </div>
+
+        <div
+          id="browseList"
+          class="flex-1 overflow-y-auto grid gap-3 mt-6 pr-1 pb-4"
+        ></div>
+      </div>
+    </div>
+    <script>
+      const AIRTABLE_TOKEN =
+        "patVP0kfX1Ch4uKWl.896c99262e92660d8728aba045b4e1cb0a3fdebd80cf3310df67f930323d66d6";
+      const BASE_ID = "appWSxdKSUmtWAIAw";
+
+      const TABLES = {
+        seasons: "Seasons",
+        queens: "Queens",
+      };
+
+      const headers = {
+        Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+        "Content-Type": "application/json",
+      };
+
+      const browseType = document.querySelector("#browseType");
+      const browseList = document.querySelector("#browseList");
+      const searchInput = document.querySelector("#searchInput");
+
+      let currentRecords = [];
+
+      function airtableUrl(tableName, params = "") {
+        return `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(tableName)}${params}`;
+      }
+
+      async function airtableFetch(tableName, params = "") {
+        const res = await fetch(airtableUrl(tableName, params), { headers });
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error(data);
+          throw new Error(`Airtable error loading ${tableName}`);
+        }
+
+        return data.records;
+      }
+
+      function getRecordTitle(record, type) {
+        if (type === "seasons") {
+          const country = record.fields.country || "";
+
+          const number = record.fields.number
+            ? `Season ${record.fields.number}`
+            : "";
+
+          return `${country} ${number}`.trim();
+        }
+
+        return record.fields.name || "Unknown Queen";
+      }
+
+      function getRecordSubtitle(record, type) {
+        if (type === "seasons") {
+          return ""; // no subtitle
+        }
+
+        return "Queen";
+      }
+
+      function renderList() {
+        const type = browseType.value;
+        const searchValue = searchInput.value.trim().toLowerCase();
+
+        browseList.innerHTML = "";
+
+        let filteredRecords = currentRecords.filter((record) => {
+          const title = getRecordTitle(record, type).toLowerCase();
+          return title.includes(searchValue);
+        });
+
+        if (!filteredRecords.length) {
+          browseList.innerHTML = `
+      <div class="bg-neutral-100 p-4 text-sm opacity-60">
+        No records found.
+      </div>
+    `;
+          return;
+        }
+
+        // 👉 GROUPING (only for seasons)
+        if (type === "seasons") {
+          const grouped = {};
+
+          filteredRecords.forEach((record) => {
+            const group = record.fields.type || "Other";
+
+            if (!grouped[group]) grouped[group] = [];
+            grouped[group].push(record);
+          });
+
+          // optional: control order
+          const groupOrder = ["Regular", "All Stars"];
+
+          Object.keys(grouped)
+            .sort((a, b) => {
+              const aIndex = groupOrder.indexOf(a);
+              const bIndex = groupOrder.indexOf(b);
+
+              if (aIndex === -1 && bIndex === -1) return a.localeCompare(b);
+              if (aIndex === -1) return 1;
+              if (bIndex === -1) return -1;
+
+              return aIndex - bIndex;
+            })
+            .forEach((groupName) => {
+              const groupHeader = document.createElement("h2");
+              groupHeader.className =
+                "font-black uppercase text-sm opacity-50 mt-4 first:mt-0";
+
+              groupHeader.textContent = groupName;
+
+              browseList.appendChild(groupHeader);
+
+              grouped[groupName].forEach((record) => {
+                const title = getRecordTitle(record, type);
+
+                const card = document.createElement("a");
+
+                card.href = `season-detail.html?season=${record.id}`;
+
+                card.className =
+                  "bg-neutral-100 p-4 flex items-center justify-between gap-4 text-neutral no-underline hover:bg-neutral-200 transition";
+
+                card.innerHTML = `
+            <div>
+              <h2 class="font-black uppercase text-md leading-tight">
+                ${title}
+              </h2>
+            </div>
+
+            <i class="fi fi-br-angle-right text-sm opacity-50"></i>
+          `;
+
+                browseList.appendChild(card);
+              });
+            });
+
+          return;
+        }
+
+        // 👉 DEFAULT (queens - no grouping)
+        filteredRecords.forEach((record) => {
+          const title = getRecordTitle(record, type);
+
+          const card = document.createElement("a");
+
+          card.href = `queen-detail.html?queen=${record.id}`;
+
+          card.className =
+            "bg-neutral-100 p-4 flex items-center justify-between gap-4 text-neutral no-underline hover:bg-neutral-200 transition";
+
+          card.innerHTML = `
+      <div>
+        <h2 class="font-black uppercase text-md leading-tight">
+          ${title}
+        </h2>
+      </div>
+
+      <i class="fi fi-br-angle-right text-sm opacity-50"></i>
+    `;
+
+          browseList.appendChild(card);
+        });
+      }
+
+      async function loadBrowseRecords() {
+        const type = browseType.value;
+
+        browseList.innerHTML = `
+      <div class="bg-neutral-100 p-4 text-sm opacity-60">
+        Loading ${type}...
+      </div>
+    `;
+
+        const tableName = type === "seasons" ? TABLES.seasons : TABLES.queens;
+
+        currentRecords = await airtableFetch(tableName);
+
+        currentRecords.sort((a, b) => {
+          return getRecordTitle(a, type).localeCompare(getRecordTitle(b, type));
+        });
+
+        renderList();
+      }
+
+      browseType.addEventListener("change", async () => {
+        searchInput.value = "";
+        await loadBrowseRecords();
+      });
+
+      searchInput.addEventListener("input", renderList);
+
+      loadBrowseRecords();
+    </script>
+  </body>
+</html>
