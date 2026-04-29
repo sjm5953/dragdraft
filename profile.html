@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en" data-theme="pink">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <!-- tailwind -->
+    <link href="src/output.css" rel="stylesheet" />
+    <!-- fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,1..1000&display=swap"
+      rel="stylesheet"
+    />
+    <!-- icons -->
+    <link
+      rel="stylesheet"
+      href="https://cdn-uicons.flaticon.com/4.0.0/uicons-bold-rounded/css/uicons-bold-rounded.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn-uicons.flaticon.com/4.0.0/uicons-solid-straight/css/uicons-solid-straight.css"
+    />
+    <script
+      src="https://cdn.jsdelivr.net/npm/@tailwindplus/elements@1"
+      type="module"
+    ></script>
+  </head>
+  <body class="overflow-hidden font-gsf">
+    <!--dock-->
+    <div
+      class="dock dock-lg z-50 bg-base-100 border-t border-neutral-200 md:hidden"
+    >
+      <a href="leagues.html" class="dock-active">
+        <i class="fi fi-br-trophy pt-1"></i>
+        <span class="dock-label">Leagues</span>
+      </a>
+
+      <a href="stats.html">
+        <i class="fi fi-br-chart-histogram pt-1"></i>
+        <span class="dock-label">Stats</span>
+      </a>
+
+      <a href="trivia.html">
+        <i class="fi fi-br-interrogation pt-1"></i>
+        <span class="dock-label">Trivia</span>
+      </a>
+
+      <a id="profileDockLink" href="profile.html">
+        <i class="fi fi-br-user pt-1"></i>
+        <span class="dock-label">Profile</span>
+      </a>
+    </div>
+    <!--main container-->
+    <div class="h-screen">
+      <!--header-->
+      <div class="h-16 flex items-center px-4 justify-between">
+        <div>
+          <h1 class="font-black uppercase text-sm">
+            <span class="text-primary">Drag</span>Draft
+          </h1>
+        </div>
+        <div class="flex gap-2">
+          <div class="dropdown dropdown-end">
+            <button
+              id="notificationsBtn"
+              tabindex="0"
+              class="btn btn-square btn-sm bg-neutral rounded-none text-base-100 relative border-0 shadow-none"
+            >
+              <i class="fi fi-br-bell pt-1"></i>
+
+              <span
+                id="notificationCount"
+                class="hidden absolute -top-2 -right-2 min-w-5 h-5 px-1 bg-primary text-neutral text-[10px] font-black flex items-center justify-center rounded-full"
+              >
+                0
+              </span>
+            </button>
+
+            <div
+              tabindex="0"
+              class="dropdown-content z-50 mt-2 w-80 bg-base-100 shadow-xl border border-neutral-200"
+            >
+              <div class="p-3 border-b border-neutral-200">
+                <h2 class="font-black uppercase text-sm">Notifications</h2>
+              </div>
+
+              <div id="notificationsList" class="max-h-96 overflow-y-auto">
+                <div class="p-4 text-sm opacity-60">Loading...</div>
+              </div>
+            </div>
+          </div>
+          <a
+            href="conversations.html"
+            class="btn btn-square btn-sm bg-neutral text-base-100 border-0 shadow-none rounded-none"
+            ><i class="fi fi-br-comment-dots pt-1"></i
+          ></a>
+        </div>
+      </div>
+      <!--body-->
+      <div
+        class="flex-1 overflow-y-auto px-4 mt-4 w-full md:max-w-3xl md:mx-auto pb-28"
+      >
+        <h1 class="font-black uppercase text-2xl">Profile</h1>
+
+        <div class="bg-neutral-100 p-4 mt-6">
+          <p class="text-xs uppercase opacity-50 font-black">Display Name</p>
+          <h2 id="displayName" class="font-black uppercase text-xl mt-1">
+            Loading
+          </h2>
+
+          <div class="mt-4">
+            <p class="text-xs uppercase opacity-50 font-black">Email</p>
+            <p id="userEmail" class="font-black text-sm mt-1">Loading</p>
+          </div>
+        </div>
+
+        <div class="mt-4 bg-neutral text-base-100 p-4">
+          <p class="text-xs uppercase opacity-50 font-black">
+            Total User Points
+          </p>
+          <p id="totalUserPoints" class="font-black text-3xl mt-1">0</p>
+        </div>
+
+        <div class="mt-6">
+          <div class="flex items-center justify-between">
+            <h2 class="font-black uppercase text-lg">Leagues</h2>
+            <span
+              id="leagueCount"
+              class="text-xs uppercase opacity-50 font-black"
+            >
+              Loading
+            </span>
+          </div>
+
+          <div id="leagueList" class="grid gap-3 mt-3">
+            <div class="bg-neutral-100 p-4 text-sm opacity-60">
+              Loading leagues...
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      const AIRTABLE_TOKEN =
+        "patVP0kfX1Ch4uKWl.896c99262e92660d8728aba045b4e1cb0a3fdebd80cf3310df67f930323d66d6";
+      const BASE_ID = "appWSxdKSUmtWAIAw";
+
+      const TABLES = {
+        users: "Users",
+        leagues: "Leagues",
+      };
+
+      const headers = {
+        Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+        "Content-Type": "application/json",
+      };
+
+      const currentUser = JSON.parse(localStorage.getItem("dragdraft_user"));
+      const params = new URLSearchParams(window.location.search);
+      const profileUserId = params.get("user") || currentUser?.id;
+
+      if (!currentUser?.id) {
+        window.location.href = "auth.html";
+      }
+
+      const displayName = document.querySelector("#displayName");
+      const userEmail = document.querySelector("#userEmail");
+      const totalUserPoints = document.querySelector("#totalUserPoints");
+      const leagueList = document.querySelector("#leagueList");
+      const leagueCount = document.querySelector("#leagueCount");
+
+      function airtableUrl(tableName, extra = "") {
+        return `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(tableName)}${extra}`;
+      }
+
+      async function getRecordById(tableName, id) {
+        const res = await fetch(airtableUrl(tableName, `/${id}`), { headers });
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error(data);
+          return null;
+        }
+
+        return data;
+      }
+
+      async function renderProfile() {
+        const user = await getRecordById(TABLES.users, profileUserId);
+
+        if (!user) {
+          displayName.textContent = "User Not Found";
+          userEmail.textContent = "";
+          totalUserPoints.textContent = "0";
+          leagueList.innerHTML = "";
+          leagueCount.textContent = "0 total";
+          return;
+        }
+
+        displayName.textContent =
+          user.fields.display_name || user.fields.name || "Unnamed User";
+
+        userEmail.textContent = user.fields.email || "No email";
+        totalUserPoints.textContent = Number(
+          user.fields.total_user_points || 0,
+        );
+
+        const leagueIds = user.fields.leagues || [];
+        leagueCount.textContent = `${leagueIds.length} total`;
+        leagueList.innerHTML = "";
+
+        if (!leagueIds.length) {
+          leagueList.innerHTML = `
+        <div class="bg-neutral-100 p-4 text-sm opacity-60">
+          This user is not in any leagues yet.
+        </div>
+      `;
+          return;
+        }
+
+        for (const leagueId of leagueIds) {
+          const league = await getRecordById(TABLES.leagues, leagueId);
+          if (!league) continue;
+
+          const card = document.createElement("a");
+          card.href = `league-detail.html?league=${league.id}`;
+          card.className =
+            "bg-neutral-100 p-4 flex items-center justify-between text-neutral no-underline hover:bg-neutral-200 transition";
+
+          card.innerHTML = `
+        <div>
+          <h3 class="font-black uppercase text-sm leading-tight">
+            ${league.fields.name || "Untitled League"}
+          </h3>
+        </div>
+
+        <i class="fi fi-br-angle-right text-sm opacity-50"></i>
+      `;
+
+          leagueList.appendChild(card);
+        }
+      }
+
+      renderProfile();
+    </script>
+  </body>
+</html>
