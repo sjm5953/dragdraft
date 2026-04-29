@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en" data-theme="pink">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <!-- tailwind -->
+    <link href="src/output.css" rel="stylesheet" />
+    <!-- fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,1..1000&display=swap"
+      rel="stylesheet"
+    />
+    <!-- icons -->
+    <link
+      rel="stylesheet"
+      href="https://cdn-uicons.flaticon.com/4.0.0/uicons-bold-rounded/css/uicons-bold-rounded.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn-uicons.flaticon.com/4.0.0/uicons-solid-straight/css/uicons-solid-straight.css"
+    />
+    <script
+      src="https://cdn.jsdelivr.net/npm/@tailwindplus/elements@1"
+      type="module"
+    ></script>
+  </head>
+  <body class="overflow-hidden font-gsf">
+    <!--dock-->
+    <div
+      class="dock dock-lg z-50 bg-base-100 border-t border-neutral-200 md:hidden"
+    >
+      <a href="leagues.html" class="">
+        <i class="fi fi-br-trophy pt-1"></i>
+        <span class="dock-label">Leagues</span>
+      </a>
+
+      <a href="stats.html">
+        <i class="fi fi-br-chart-histogram pt-1"></i>
+        <span class="dock-label">Stats</span>
+      </a>
+
+      <a href="trivia.html">
+        <i class="fi fi-br-interrogation pt-1"></i>
+        <span class="dock-label">Trivia</span>
+      </a>
+
+      <a id="profileDockLink" href="profile.html">
+        <i class="fi fi-br-user pt-1"></i>
+        <span class="dock-label">Profile</span>
+      </a>
+    </div>
+    <!--main container-->
+    <div class="h-screen flex flex-col overflow-hidden">
+      <!--header-->
+      <div class="h-16 shrink-0 flex items-center px-4 justify-between">
+        <div>
+          <h1 class="font-black uppercase text-sm">
+            <span class="text-primary">Drag</span>Draft
+          </h1>
+        </div>
+        <div class="flex gap-2">
+          <div class="dropdown dropdown-end">
+            <button
+              id="notificationsBtn"
+              tabindex="0"
+              class="btn btn-square btn-sm bg-neutral rounded-none text-base-100 relative border-0 shadow-none"
+            >
+              <i class="fi fi-br-bell pt-1"></i>
+
+              <span
+                id="notificationCount"
+                class="hidden absolute -top-2 -right-2 min-w-5 h-5 px-1 bg-primary text-neutral text-[10px] font-black flex items-center justify-center rounded-full"
+              >
+                0
+              </span>
+            </button>
+
+            <div
+              tabindex="0"
+              class="dropdown-content z-50 mt-2 w-80 bg-base-100 shadow-xl border border-neutral-200"
+            >
+              <div class="p-3 border-b border-neutral-200">
+                <h2 class="font-black uppercase text-sm">Notifications</h2>
+              </div>
+
+              <div id="notificationsList" class="max-h-96 overflow-y-auto">
+                <div class="p-4 text-sm opacity-60">Loading...</div>
+              </div>
+            </div>
+          </div>
+          <a
+            href="conversations.html"
+            class="btn btn-square btn-sm bg-neutral text-base-100 border-0 shadow-none rounded-none"
+            ><i class="fi fi-br-comment-dots pt-1"></i
+          ></a>
+        </div>
+      </div>
+      <!--body-->
+      <div
+        class="flex-1 min-h-0 flex flex-col overflow-hidden px-4 mt-4 w-full md:max-w-3xl md:mx-auto pb-22"
+      >
+        <div class="flex items-center gap-4">
+          <a
+            href="stats.html"
+            class="btn btn-square btn-xs bg-base-100 text-neutral border-neutral shadow-none"
+          >
+            <i class="fi fi-br-angle-left pt-1"></i>
+          </a>
+
+          <h1 id="seasonTitle" class="font-black uppercase text-2xl">Season</h1>
+        </div>
+
+        <div role="tablist" class="tabs tabs-border mt-2 shrink-0">
+          <a role="tab" data-tab="queens" class="tab tab-active">Queens</a>
+          <a role="tab" data-tab="episodes" class="tab">Episodes</a>
+        </div>
+
+        <div class="flex-1 min-h-0 overflow-hidden mt-4">
+          <div id="queensPanel" class="h-full overflow-y-auto pr-1">
+            <div id="contestantList" class="grid gap-2">
+              <div class="text-sm opacity-60">Loading contestants...</div>
+            </div>
+          </div>
+
+          <div id="episodesPanel" class="hidden h-full overflow-y-auto pr-1">
+            <div id="episodeList" class="grid gap-2">
+              <div class="text-sm opacity-60">Loading episodes...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      const AIRTABLE_TOKEN =
+        "patVP0kfX1Ch4uKWl.896c99262e92660d8728aba045b4e1cb0a3fdebd80cf3310df67f930323d66d6";
+      const BASE_ID = "appWSxdKSUmtWAIAw";
+
+      const TABLES = {
+        seasons: "Seasons",
+        seasonContestants: "Season Contestants",
+        queens: "Queens",
+        episodes: "Episodes",
+      };
+
+      const headers = {
+        Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+        "Content-Type": "application/json",
+      };
+
+      const params = new URLSearchParams(window.location.search);
+      const seasonId = params.get("season");
+
+      const seasonTitle = document.querySelector("#seasonTitle");
+      const contestantList = document.querySelector("#contestantList");
+      const episodeList = document.querySelector("#episodeList");
+
+      function airtableUrl(tableName, extra = "") {
+        return `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(tableName)}${extra}`;
+      }
+
+      async function getRecordById(tableName, id) {
+        const res = await fetch(airtableUrl(tableName, `/${id}`), { headers });
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error(data);
+          return null;
+        }
+
+        return data;
+      }
+
+      function formatDate(dateString) {
+        if (!dateString) return "No air date";
+
+        return new Date(dateString).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
+      }
+
+      async function renderSeasonContestants(season) {
+        const ids = season.fields.season_contestants || [];
+
+        contestantList.innerHTML = "";
+
+        if (!ids.length) {
+          contestantList.innerHTML = `
+        <div class="bg-base-100 p-3 text-sm opacity-60">
+          No contestants found.
+        </div>
+      `;
+          return;
+        }
+
+        const records = [];
+
+        for (const id of ids) {
+          const seasonContestant = await getRecordById(
+            TABLES.seasonContestants,
+            id,
+          );
+          if (!seasonContestant) continue;
+
+          const queenId = seasonContestant.fields.queen?.[0];
+          const queen = queenId
+            ? await getRecordById(TABLES.queens, queenId)
+            : null;
+
+          records.push({
+            id: seasonContestant.id,
+
+            name: queen?.fields?.name || "Unknown Queen",
+
+            imageUrl: queen?.fields?.image_url || "",
+          });
+        }
+
+        records.sort((a, b) => a.name.localeCompare(b.name));
+
+        records.forEach((queen) => {
+          const card = document.createElement("a");
+          card.href = `queen-detail.html?queen=${queen.id}`;
+          card.className =
+            "bg-neutral-100 p-3 flex items-center justify-between text-neutral no-underline hover:bg-neutral-200 transition";
+
+          card.innerHTML = `
+  <div class="flex-1">
+    <h3 class="font-black uppercase text-sm leading-tight">
+      ${queen.name}
+    </h3>
+  </div>
+
+  <i class="fi fi-br-angle-right text-sm opacity-50"></i>
+`;
+
+          contestantList.appendChild(card);
+        });
+      }
+
+      async function renderEpisodes(season) {
+        const ids = season.fields.episodes || [];
+
+        episodeList.innerHTML = "";
+
+        if (!ids.length) {
+          episodeList.innerHTML = `
+        <div class="bg-base-100 p-3 text-sm opacity-60">
+          No episodes found.
+        </div>
+      `;
+          return;
+        }
+
+        const episodes = [];
+
+        for (const id of ids) {
+          const episode = await getRecordById(TABLES.episodes, id);
+          if (episode) episodes.push(episode);
+        }
+
+        episodes.sort((a, b) => {
+          const aNum = Number(a.fields.num_season || 0);
+          const bNum = Number(b.fields.num_season || 0);
+          return aNum - bNum;
+        });
+
+        episodes.forEach((episode) => {
+          const card = document.createElement("a");
+          card.href = `episode-detail.html?episode=${episode.id}`;
+          card.className =
+            "bg-neutral-100 p-3 flex items-center justify-between text-neutral no-underline hover:bg-neutral-200 transition";
+
+          card.innerHTML = `
+        <div>
+          <h3 class="font-black uppercase text-sm leading-tight">
+            Episode ${episode.fields.num_season || "?"}
+          </h3>
+          <p class="text-xs uppercase opacity-50 mt-1">
+            ${formatDate(episode.fields.air_date)}
+          </p>
+        </div>
+
+        <i class="fi fi-br-angle-right text-sm opacity-50"></i>
+      `;
+
+          episodeList.appendChild(card);
+        });
+      }
+
+      async function initializePage() {
+        if (!seasonId) {
+          seasonTitle.textContent = "Missing Season";
+          contestantList.innerHTML = "";
+          episodeList.innerHTML = "";
+          return;
+        }
+
+        const season = await getRecordById(TABLES.seasons, seasonId);
+
+        if (!season) {
+          seasonTitle.textContent = "Season Not Found";
+          contestantList.innerHTML = "";
+          episodeList.innerHTML = "";
+          return;
+        }
+
+        const country = season.fields.country || "";
+
+        const number = season.fields.number || "";
+
+        seasonTitle.textContent = `Drag Race${country ? ` (${country})` : ""} ${
+          number ? `${number}` : ""
+        }`.trim();
+
+        await renderSeasonContestants(season);
+        await renderEpisodes(season);
+      }
+
+      const queensPanel = document.querySelector("#queensPanel");
+      const episodesPanel = document.querySelector("#episodesPanel");
+
+      document.querySelectorAll("[data-tab]").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          document
+            .querySelectorAll("[data-tab]")
+            .forEach((t) => t.classList.remove("tab-active"));
+
+          tab.classList.add("tab-active");
+
+          const selectedTab = tab.dataset.tab;
+
+          queensPanel.classList.toggle("hidden", selectedTab !== "queens");
+          episodesPanel.classList.toggle("hidden", selectedTab !== "episodes");
+        });
+      });
+
+      initializePage();
+    </script>
+  </body>
+</html>

@@ -32,12 +32,12 @@
     <div
       class="dock dock-lg z-50 bg-base-100 border-t border-neutral-200 md:hidden"
     >
-      <a href="leagues.html" class="dock-active">
+      <a href="leagues.html" class="">
         <i class="fi fi-br-trophy pt-1"></i>
         <span class="dock-label">Leagues</span>
       </a>
 
-      <a href="stats.html">
+      <a href="stats.html" class="dock-active">
         <i class="fi fi-br-chart-histogram pt-1"></i>
         <span class="dock-label">Stats</span>
       </a>
@@ -100,19 +100,19 @@
       </div>
       <!--body-->
       <div
-        class="flex-1 flex flex-col overflow-hidden px-4 mt-4 w-full md:max-w-3xl md:mx-auto pb-22"
+        class="flex-1 flex flex-col overflow-hidden px-4 mt-2 w-full md:max-w-3xl md:mx-auto pb-22"
       >
         <select
           id="browseType"
           class="select font-black uppercase text-2xl h-14 border-0 focus:outline-none focus:ring-0 px-0"
         >
           <option value="seasons" selected>Seasons</option>
-
           <option value="queens">Queens</option>
+          <option value="lipSyncs">Lip Sync Songs</option>
         </select>
 
         <div class="flex flex-col pt-2">
-          <label class="input rounded-none h-12 outline-0">
+          <label class="input rounded-none h-12 outline-0 w-full">
             <i class="fi fi-br-search pt-1"></i>
 
             <input id="searchInput" type="search" class="grow outline-0" />
@@ -125,6 +125,33 @@
         ></div>
       </div>
     </div>
+    <dialog id="lipSyncModal" class="modal">
+      <div class="modal-box rounded-none bg-base-100">
+        <h3 id="lipSyncSongTitle" class="font-black uppercase text-lg">
+          Lip Sync Song
+        </h3>
+
+        <div class="mt-4">
+          <p class="text-xs uppercase opacity-50 font-black">Episode</p>
+          <p id="lipSyncEpisode" class="font-black uppercase text-sm mt-1"></p>
+        </div>
+
+        <div class="mt-4">
+          <p class="text-xs uppercase opacity-50 font-black">Contestants</p>
+          <div id="lipSyncContestants" class="grid gap-2 mt-2"></div>
+        </div>
+
+        <div class="modal-action">
+          <form method="dialog">
+            <button
+              class="btn btn-sm rounded-none bg-neutral text-base-100 border-0 shadow-none uppercase font-black"
+            >
+              Close
+            </button>
+          </form>
+        </div>
+      </div>
+    </dialog>
     <script>
       const AIRTABLE_TOKEN =
         "patVP0kfX1Ch4uKWl.896c99262e92660d8728aba045b4e1cb0a3fdebd80cf3310df67f930323d66d6";
@@ -133,6 +160,10 @@
       const TABLES = {
         seasons: "Seasons",
         queens: "Queens",
+        lipSyncs: "Lip Syncs",
+        songs: "Lip Sync Songs",
+        episodes: "Episodes",
+        seasonContestants: "Season Contestants",
       };
 
       const headers = {
@@ -144,7 +175,26 @@
       const browseList = document.querySelector("#browseList");
       const searchInput = document.querySelector("#searchInput");
 
+      const lipSyncModal = document.querySelector("#lipSyncModal");
+      const lipSyncSongTitle = document.querySelector("#lipSyncSongTitle");
+      const lipSyncEpisode = document.querySelector("#lipSyncEpisode");
+      const lipSyncContestants = document.querySelector("#lipSyncContestants");
+
       let currentRecords = [];
+
+      async function getRecordById(tableName, id) {
+        const res = await fetch(airtableUrl(tableName, `/${id}`), { headers });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error(data);
+
+          return null;
+        }
+
+        return data;
+      }
 
       function airtableUrl(tableName, params = "") {
         return `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(tableName)}${params}`;
@@ -165,12 +215,15 @@
       function getRecordTitle(record, type) {
         if (type === "seasons") {
           const country = record.fields.country || "";
-
           const number = record.fields.number
             ? `Season ${record.fields.number}`
             : "";
 
           return `${country} ${number}`.trim();
+        }
+
+        if (type === "lipSyncs") {
+          return record._songTitle || "Unknown Song";
         }
 
         return record.fields.name || "Unknown Queen";
@@ -184,6 +237,25 @@
         return "Queen";
       }
 
+      async function enrichLipSyncRecords(records) {
+        for (const record of records) {
+          const songId = record.fields.song?.[0];
+
+          if (!songId) {
+            record._songTitle = "Unknown Song";
+            record._artist = "";
+            continue;
+          }
+
+          const song = await getRecordById(TABLES.songs, songId);
+
+          record._songTitle = song?.fields?.song_title || "Unknown Song";
+          record._artist = song?.fields?.artist || "";
+        }
+
+        return records;
+      }
+
       function renderList() {
         const type = browseType.value;
         const searchValue = searchInput.value.trim().toLowerCase();
@@ -192,6 +264,12 @@
 
         let filteredRecords = currentRecords.filter((record) => {
           const title = getRecordTitle(record, type).toLowerCase();
+
+          if (type === "lipSyncs") {
+            const artist = (record._artist || "").toLowerCase();
+            return title.includes(searchValue) || artist.includes(searchValue);
+          }
+
           return title.includes(searchValue);
         });
 
@@ -265,6 +343,40 @@
           return;
         }
 
+        if (type === "lipSyncs") {
+          filteredRecords.forEach((record) => {
+            const title = getRecordTitle(record, type);
+
+            const card = document.createElement("button");
+            card.type = "button";
+
+            card.className =
+              "bg-neutral-100 p-4 flex items-center justify-between gap-4 text-neutral no-underline hover:bg-neutral-200 transition text-left";
+
+            card.innerHTML = `
+  <div>
+    <h2 class="font-black uppercase text-md leading-tight">
+      ${record._songTitle || "Unknown Song"}
+    </h2>
+
+    <p class="text-xs uppercase opacity-50 mt-1">
+      ${record._artist || "Unknown Artist"}
+    </p>
+  </div>
+
+  <i class="fi fi-br-angle-right text-sm opacity-50"></i>
+`;
+
+            card.addEventListener("click", () => {
+              openLipSyncModal(record);
+            });
+
+            browseList.appendChild(card);
+          });
+
+          return;
+        }
+
         // 👉 DEFAULT (queens - no grouping)
         filteredRecords.forEach((record) => {
           const title = getRecordTitle(record, type);
@@ -299,15 +411,68 @@
       </div>
     `;
 
-        const tableName = type === "seasons" ? TABLES.seasons : TABLES.queens;
+        const tableName =
+          type === "seasons"
+            ? TABLES.seasons
+            : type === "lipSyncs"
+              ? TABLES.lipSyncs
+              : TABLES.queens;
 
         currentRecords = await airtableFetch(tableName);
+
+        if (type === "lipSyncs") {
+          currentRecords = await enrichLipSyncRecords(currentRecords);
+        }
 
         currentRecords.sort((a, b) => {
           return getRecordTitle(a, type).localeCompare(getRecordTitle(b, type));
         });
 
         renderList();
+      }
+
+      async function openLipSyncModal(lipSync) {
+        lipSyncSongTitle.textContent = lipSync._songTitle || "Unknown Song";
+
+        const episodeId = lipSync.fields.episode?.[0];
+        const episode = episodeId
+          ? await getRecordById(TABLES.episodes, episodeId)
+          : null;
+
+        lipSyncEpisode.textContent =
+          episode?.fields?.name ||
+          `Episode ${episode?.fields?.num_season || "?"}`;
+
+        const contestantIds = lipSync.fields.contestants || [];
+        const winnerId = lipSync.fields.winner?.[0] || null;
+
+        lipSyncContestants.innerHTML = "";
+
+        for (const contestantId of contestantIds) {
+          const seasonContestant = await getRecordById(
+            TABLES.seasonContestants,
+            contestantId,
+          );
+
+          const queenId = seasonContestant?.fields?.queen?.[0];
+          const queen = queenId
+            ? await getRecordById(TABLES.queens, queenId)
+            : null;
+
+          const name = queen?.fields?.name || "Unknown Queen";
+          const isWinner = contestantId === winnerId;
+
+          const row = document.createElement("p");
+          row.className = `font-black uppercase text-sm ${
+            isWinner ? "text-primary" : "text-neutral"
+          }`;
+
+          row.textContent = name;
+
+          lipSyncContestants.appendChild(row);
+        }
+
+        lipSyncModal.showModal();
       }
 
       browseType.addEventListener("change", async () => {
