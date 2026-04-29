@@ -233,6 +233,43 @@
       let allUsers = [];
       let conversations = [];
       let activeConversation = null;
+      let chatRefreshInterval = null;
+      let lastMessageSignature = "";
+
+      function getMessageSignature(conversation) {
+        const messageIds = conversation.fields.messages || [];
+        return messageIds.join("|");
+      }
+
+      function startChatAutoRefresh() {
+        stopChatAutoRefresh();
+
+        chatRefreshInterval = setInterval(async () => {
+          if (!activeConversation) return;
+
+          const freshConversation = await getRecordById(
+            TABLES.conversations,
+            activeConversation.id,
+          );
+
+          if (!freshConversation) return;
+
+          const newSignature = getMessageSignature(freshConversation);
+
+          if (newSignature !== lastMessageSignature) {
+            activeConversation = freshConversation;
+            lastMessageSignature = newSignature;
+            await loadConversationMessages(activeConversation);
+          }
+        }, 3000);
+      }
+
+      function stopChatAutoRefresh() {
+        if (chatRefreshInterval) {
+          clearInterval(chatRefreshInterval);
+          chatRefreshInterval = null;
+        }
+      }
 
       function airtableUrl(tableName, extra = "") {
         return `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(tableName)}${extra}`;
@@ -422,6 +459,9 @@
         chatView.classList.remove("hidden");
 
         await loadConversationMessages(activeConversation);
+
+        lastMessageSignature = getMessageSignature(activeConversation);
+        startChatAutoRefresh();
       }
 
       async function loadConversationMessages(conversation) {
@@ -507,6 +547,7 @@
         .addEventListener("click", async () => {
           chatView.classList.add("hidden");
           conversationListView.classList.remove("hidden");
+          stopChatAutoRefresh();
           activeConversation = null;
           await loadConversations();
         });
