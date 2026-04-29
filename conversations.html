@@ -20,6 +20,30 @@
   </head>
 
   <body class="overflow-hidden font-gsf">
+    <!--dock-->
+    <div
+      class="dock dock-lg z-50 bg-base-100 border-t border-neutral-200 md:hidden"
+    >
+      <a href="leagues.html">
+        <i class="fi fi-br-trophy pt-1"></i>
+        <span class="dock-label">Leagues</span>
+      </a>
+
+      <a href="stats.html">
+        <i class="fi fi-br-chart-histogram pt-1"></i>
+        <span class="dock-label">Stats</span>
+      </a>
+
+      <a href="trivia.html">
+        <i class="fi fi-br-interrogation pt-1"></i>
+        <span class="dock-label">Trivia</span>
+      </a>
+
+      <a id="profileDockLink" href="profile.html">
+        <i class="fi fi-br-user pt-1"></i>
+        <span class="dock-label">Profile</span>
+      </a>
+    </div>
     <div class="h-screen flex flex-col overflow-hidden">
       <!--header-->
       <div
@@ -61,7 +85,10 @@
       </div>
 
       <!--chat view-->
-      <div id="chatView" class="hidden flex-1 flex flex-col overflow-hidden">
+      <div
+        id="chatView"
+        class="hidden flex-1 flex flex-col overflow-hidden pb-20"
+      >
         <div class="px-4 mt-4 w-full md:max-w-3xl md:mx-auto shrink-0">
           <div class="flex items-center gap-4">
             <button
@@ -449,7 +476,7 @@
               )}</time>
             </div>
 
-            <div class="chat-bubble ${isMine ? "chat-bubble-primary" : ""}">
+            <div class="chat-bubble ${isMine ? "chat-bubble-primary text-neutral" : ""}">
               ${message.fields.body_text || ""}
             </div>
           `;

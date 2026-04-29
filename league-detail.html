@@ -28,9 +28,33 @@
     ></script>
   </head>
   <body class="overflow-hidden font-gsf">
+    <!--dock-->
+    <div
+      class="dock dock-lg z-50 bg-base-100 border-t border-neutral-200 md:hidden"
+    >
+      <a href="leagues.html">
+        <i class="fi fi-br-trophy pt-1"></i>
+        <span class="dock-label">Leagues</span>
+      </a>
+
+      <a href="stats.html">
+        <i class="fi fi-br-chart-histogram pt-1"></i>
+        <span class="dock-label">Stats</span>
+      </a>
+
+      <a href="trivia.html">
+        <i class="fi fi-br-interrogation pt-1"></i>
+        <span class="dock-label">Trivia</span>
+      </a>
+
+      <a id="profileDockLink" href="profile.html">
+        <i class="fi fi-br-user pt-1"></i>
+        <span class="dock-label">Profile</span>
+      </a>
+    </div>
     <a
       id="draftButton"
-      class="fixed bottom-4 left-4 right-4 md:left-1/2 md:-translate-x-1/2 md:max-w-3xl btn rounded-none bg-neutral text-base-100 border-0 shadow-lg uppercase font-black h-12 z-50"
+      class="fixed bottom-24 left-4 right-4 md:left-1/2 md:-translate-x-1/2 md:max-w-3xl btn rounded-none bg-neutral text-base-100 border-0 shadow-lg uppercase font-black h-12 z-50"
     >
       Draft / Trade Roster
     </a>
@@ -84,7 +108,7 @@
       </div>
       <!--body-->
       <div
-        class="flex-1 overflow-y-auto px-4 mt-4 w-full md:max-w-3xl md:mx-auto pb-24"
+        class="flex-1 overflow-y-auto px-4 mt-4 w-full md:max-w-3xl md:mx-auto pb-40"
       >
         <!--page header-->
         <div class="flex items-center gap-4">
@@ -317,19 +341,24 @@
         const nextEpisode = upcomingEpisodes[0];
         const nextAirDate = new Date(nextEpisode.fields.air_date);
 
-        const lockDate = new Date(nextAirDate);
+        const lockDraftSetting = league.fields.lock_draft || "Day Before";
 
-        lockDate.setDate(lockDate.getDate() - 1);
+        let lockDate = new Date(nextAirDate);
 
-        lockDate.setHours(23, 59, 0, 0);
+        if (lockDraftSetting === "Hour Before") {
+          lockDate.setHours(lockDate.getHours() - 1);
+        } else {
+          lockDate.setDate(lockDate.getDate() - 1);
+          lockDate.setHours(0, 0, 0, 0);
+        }
 
         if (now >= lockDate) {
           lockDraftButton("Draft locked");
-
           return;
         }
 
         draftButton.classList.remove("opacity-50", "pointer-events-none");
+        draftButton.href = `roster-draft.html?league=${league.id}`;
         draftButton.textContent = "Draft / Trade Roster";
       }
 
@@ -1085,6 +1114,12 @@
       async function loadNotifications() {
         try {
           const userRecord = await getCurrentUserRecord();
+
+          const profileDockLink = document.querySelector("#profileDockLink");
+
+          if (profileDockLink && currentUser?.id) {
+            profileDockLink.href = `profile.html?user=${currentUser.id}`;
+          }
 
           currentNotifications = await getUserNotifications(userRecord.id);
 

@@ -28,6 +28,30 @@
     ></script>
   </head>
   <body class="overflow-hidden font-gsf">
+    <!--dock-->
+    <div
+      class="dock dock-lg z-50 bg-base-100 border-t border-neutral-200 md:hidden"
+    >
+      <a href="leagues.html" class="">
+        <i class="fi fi-br-trophy pt-1"></i>
+        <span class="dock-label">Leagues</span>
+      </a>
+
+      <a href="stats.html">
+        <i class="fi fi-br-chart-histogram pt-1"></i>
+        <span class="dock-label">Stats</span>
+      </a>
+
+      <a href="trivia.html">
+        <i class="fi fi-br-interrogation pt-1"></i>
+        <span class="dock-label">Trivia</span>
+      </a>
+
+      <a id="profileDockLink" href="profile.html">
+        <i class="fi fi-br-user pt-1"></i>
+        <span class="dock-label">Profile</span>
+      </a>
+    </div>
     <!--main container-->
     <div class="h-screen flex flex-col">
       <!--header-->
@@ -71,7 +95,7 @@
       </div>
       <!--body-->
       <div
-        class="flex-1 overflow-y-auto px-4 mt-4 w-full md:max-w-3xl md:mx-auto"
+        class="flex-1 overflow-y-auto px-4 mt-4 w-full md:max-w-3xl md:mx-auto pb-20"
       >
         <!--page header-->
         <div class="flex items-center gap-4">
@@ -381,12 +405,7 @@
 
         if (!slots.length) {
           slotGrid.innerHTML = `
-        <div class="bg-neutral-100 p-4 col-span-2">
-          <h2 class="font-black uppercase text-md">No slots available</h2>
-          <p class="text-sm opacity-60 mt-1">
-            Set available_slots on your League Members record.
-          </p>
-        </div>
+
       `;
           return;
         }
@@ -520,10 +539,7 @@
           ${queen.name}
         </h3>
 
-        <div class="flex justify-between items-center mt-1">
-          <p class="text-xs opacity-50 uppercase">Points</p>
-          <p class="font-black text-sm">${queen.points}</p>
-        </div>
+
       `;
 
           card.addEventListener("dragstart", (e) => {

@@ -39,3 +39,31 @@
     transform: rotate(2deg);
     z-index: 9999;
   }
+
+.dock {
+    padding: 0;
+}
+
+.dock a {
+    margin: 0;
+    border-radius: 0;
+    text-transform: uppercase;
+    font-weight: 900;
+}
+
+.dock a i {
+    font-size: 20px;
+}
+
+.dock-active::after {
+    display: none;
+  }
+
+.dock-active {
+    background-color: var(--color-neutral);
+    color: var(--color-base-100);
+}
+
+.dock-active i {
+    color: var(--color-primary);
+}
