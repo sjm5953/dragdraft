@@ -100,11 +100,11 @@
       </div>
       <!--body-->
       <div
-        class="flex-1 overflow-y-auto px-4 mt-4 w-full md:max-w-3xl md:mx-auto pb-28"
+        class="flex-1 overflow-y-auto px-4 w-full md:max-w-3xl md:mx-auto pb-28"
       >
         <h1 class="font-black uppercase text-2xl">Profile</h1>
 
-        <div class="bg-neutral-100 p-4 mt-6">
+        <div class="bg-neutral-100 p-4 mt-4">
           <p class="text-xs uppercase opacity-50 font-black">Display Name</p>
           <h2 id="displayName" class="font-black uppercase text-xl mt-1">
             Loading
@@ -116,11 +116,20 @@
           </div>
         </div>
 
-        <div class="mt-4 bg-neutral text-base-100 p-4">
-          <p class="text-xs uppercase opacity-50 font-black">
-            Total User Points
-          </p>
-          <p id="totalUserPoints" class="font-black text-3xl mt-1">0</p>
+        <div class="flex mt-6">
+          <div
+            class="bg-neutral text-base-100 p-4 flex flex-col justify-center"
+          >
+            <p class="text-xs uppercase opacity-50 font-black">Points</p>
+            <p id="totalUserPoints" class="font-black text-3xl mt-1">0</p>
+          </div>
+
+          <div
+            id="badgeRow"
+            class="flex-1 flex gap-3 overflow-x-auto bg-neutral-100 p-2"
+          >
+            <div class="text-sm opacity-60">Loading badges...</div>
+          </div>
         </div>
 
         <div class="mt-6">
@@ -150,6 +159,8 @@
       const TABLES = {
         users: "Users",
         leagues: "Leagues",
+        userBadges: "User Badges",
+        notifications: "notifications",
       };
 
       const headers = {
@@ -171,6 +182,50 @@
       const leagueList = document.querySelector("#leagueList");
       const leagueCount = document.querySelector("#leagueCount");
 
+      const badgeRow = document.querySelector("#badgeRow");
+
+      let currentNotifications = [];
+      let notificationsMarkedRead = false;
+
+      async function renderBadges(user) {
+        const badgeIds = user.fields.badges || [];
+
+        badgeRow.innerHTML = "";
+
+        if (!badgeIds.length) {
+          badgeRow.innerHTML = `
+      <div class="bg-neutral-100 p-3 text-sm opacity-60 w-full">
+        No badges yet.
+      </div>
+    `;
+          return;
+        }
+
+        const latestThree = badgeIds.slice(-3).reverse();
+
+        for (const badgeId of latestThree) {
+          const badge = await getRecordById(TABLES.userBadges, badgeId);
+          if (!badge) continue;
+
+          const imageUrl = badge.fields.badge_image?.[0]?.url;
+          const badgeName = badge.fields.name || "Badge";
+
+          const badgeCard = document.createElement("div");
+          badgeCard.className = "shrink-0 w-20";
+
+          badgeCard.innerHTML = `
+      ${
+        imageUrl
+          ? `<img src="${imageUrl}" alt="${badgeName}" class="w-20 h-20 object-contain" />`
+          : `<div class="w-20 h-20"></div>`
+      }
+
+    `;
+
+          badgeRow.appendChild(badgeCard);
+        }
+      }
+
       function airtableUrl(tableName, extra = "") {
         return `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(tableName)}${extra}`;
       }
@@ -189,6 +244,8 @@
 
       async function renderProfile() {
         const user = await getRecordById(TABLES.users, profileUserId);
+
+        await renderBadges(user);
 
         if (!user) {
           displayName.textContent = "User Not Found";
@@ -243,7 +300,172 @@
         }
       }
 
+      function updateNotificationCount(count) {
+        const notificationCount = document.querySelector("#notificationCount");
+
+        if (!notificationCount) return;
+
+        if (!count) {
+          notificationCount.classList.add("hidden");
+          notificationCount.textContent = "0";
+          return;
+        }
+
+        notificationCount.classList.remove("hidden");
+        notificationCount.textContent = count > 9 ? "9+" : count;
+      }
+
+      function formatNotificationDate(dateString) {
+        if (!dateString) return "";
+
+        return new Date(dateString).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        });
+      }
+
+      function renderNotifications(notifications) {
+        const notificationsList = document.querySelector("#notificationsList");
+
+        if (!notificationsList) return;
+
+        if (!notifications.length) {
+          notificationsList.innerHTML = `
+      <div class="p-4 text-sm opacity-60">
+        No notifications yet.
+      </div>
+    `;
+          return;
+        }
+
+        notificationsList.innerHTML = "";
+
+        notifications.forEach((notification) => {
+          const item = document.createElement("div");
+          item.className = "p-4 border-b border-neutral-200 last:border-b-0";
+
+          item.innerHTML = `
+      <div class="flex items-start justify-between gap-3">
+        <h3 class="font-black uppercase text-sm leading-tight">
+          ${notification.fields.subject || "Notification"}
+        </h3>
+
+        <span class="text-[10px] uppercase opacity-50 whitespace-nowrap">
+          ${formatNotificationDate(notification.fields.created_at)}
+        </span>
+      </div>
+
+      <p class="text-sm opacity-70 mt-1">
+        ${notification.fields.body_text || ""}
+      </p>
+    `;
+
+          notificationsList.appendChild(item);
+        });
+      }
+
+      async function airtableFetch(tableName, params = "") {
+        const res = await fetch(airtableUrl(tableName, params), { headers });
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error(data);
+          throw new Error(`Airtable error loading ${tableName}`);
+        }
+
+        return data.records;
+      }
+
+      async function updateRecord(tableName, id, fields) {
+        const res = await fetch(airtableUrl(tableName, `/${id}`), {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ fields }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error(data);
+          throw new Error(`Could not update ${tableName}.`);
+        }
+
+        return data;
+      }
+
+      async function getUserNotifications(userRecordId) {
+        const notifications = await airtableFetch(TABLES.notifications);
+
+        return notifications
+          .filter((notification) => {
+            const users = notification.fields.user || [];
+            const isUnread = notification.fields.read !== true;
+
+            return users.includes(userRecordId) && isUnread;
+          })
+          .sort((a, b) => {
+            return (
+              new Date(b.fields.created_at) - new Date(a.fields.created_at)
+            );
+          });
+      }
+
+      async function markNotificationsAsRead(notifications) {
+        for (const notification of notifications) {
+          await updateRecord(TABLES.notifications, notification.id, {
+            read: true,
+          });
+        }
+      }
+
+      async function loadNotifications() {
+        try {
+          currentNotifications = await getUserNotifications(currentUser.id);
+
+          renderNotifications(currentNotifications);
+          updateNotificationCount(currentNotifications.length);
+        } catch (err) {
+          console.error("Could not load notifications:", err);
+
+          const notificationsList =
+            document.querySelector("#notificationsList");
+
+          if (notificationsList) {
+            notificationsList.innerHTML = `
+        <div class="p-4 text-sm text-red-700 bg-red-100">
+          Could not load notifications.
+        </div>
+      `;
+          }
+        }
+      }
+
+      function initializeNotifications() {
+        const notificationsDropdown =
+          document.querySelector(".dropdown-content");
+
+        if (!notificationsDropdown) return;
+
+        notificationsDropdown.addEventListener("focusin", async () => {
+          if (notificationsMarkedRead || !currentNotifications.length) return;
+
+          notificationsMarkedRead = true;
+
+          try {
+            await markNotificationsAsRead(currentNotifications);
+
+            currentNotifications = [];
+            renderNotifications([]);
+            updateNotificationCount(0);
+          } catch (err) {
+            console.error("Could not mark notifications as read:", err);
+          }
+        });
+      }
+
       renderProfile();
+      loadNotifications();
+      initializeNotifications();
     </script>
   </body>
 </html>

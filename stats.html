@@ -164,6 +164,8 @@
         songs: "Lip Sync Songs",
         episodes: "Episodes",
         seasonContestants: "Season Contestants",
+        users: "Users",
+        notifications: "notifications",
       };
 
       const headers = {
@@ -179,6 +181,15 @@
       const lipSyncSongTitle = document.querySelector("#lipSyncSongTitle");
       const lipSyncEpisode = document.querySelector("#lipSyncEpisode");
       const lipSyncContestants = document.querySelector("#lipSyncContestants");
+
+      const currentUser = JSON.parse(localStorage.getItem("dragdraft_user"));
+
+      if (!currentUser?.id) {
+        window.location.href = "auth.html";
+      }
+
+      let currentNotifications = [];
+      let notificationsMarkedRead = false;
 
       let currentRecords = [];
 
@@ -402,6 +413,169 @@
         });
       }
 
+      async function getCurrentUserRecord() {
+        return await getRecordById(TABLES.users, currentUser.id);
+      }
+
+      function updateNotificationCount(count) {
+        const notificationCount = document.querySelector("#notificationCount");
+
+        if (!notificationCount) return;
+
+        if (!count) {
+          notificationCount.classList.add("hidden");
+          notificationCount.textContent = "0";
+          return;
+        }
+
+        notificationCount.classList.remove("hidden");
+        notificationCount.textContent = count > 9 ? "9+" : count;
+      }
+
+      function formatNotificationDate(dateString) {
+        if (!dateString) return "";
+
+        return new Date(dateString).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        });
+      }
+
+      function renderNotifications(notifications) {
+        const notificationsList = document.querySelector("#notificationsList");
+
+        if (!notificationsList) return;
+
+        if (!notifications.length) {
+          notificationsList.innerHTML = `
+      <div class="p-4 text-sm opacity-60">
+        No notifications yet.
+      </div>
+    `;
+          return;
+        }
+
+        notificationsList.innerHTML = "";
+
+        notifications.forEach((notification) => {
+          const item = document.createElement("div");
+          item.className = "p-4 border-b border-neutral-200 last:border-b-0";
+
+          item.innerHTML = `
+      <div class="flex items-start justify-between gap-3">
+        <h3 class="font-black uppercase text-sm leading-tight">
+          ${notification.fields.subject || "Notification"}
+        </h3>
+
+        <span class="text-[10px] uppercase opacity-50 whitespace-nowrap">
+          ${formatNotificationDate(notification.fields.created_at)}
+        </span>
+      </div>
+
+      <p class="text-sm opacity-70 mt-1">
+        ${notification.fields.body_text || ""}
+      </p>
+    `;
+
+          notificationsList.appendChild(item);
+        });
+      }
+
+      async function updateRecord(tableName, id, fields) {
+        const res = await fetch(airtableUrl(tableName, `/${id}`), {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ fields }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error(data);
+          throw new Error(`Could not update ${tableName}.`);
+        }
+
+        return data;
+      }
+
+      async function getUserNotifications(userRecordId) {
+        const notifications = await airtableFetch(TABLES.notifications);
+
+        return notifications
+          .filter((notification) => {
+            const users = notification.fields.user || [];
+            const isUnread = notification.fields.read !== true;
+
+            return users.includes(userRecordId) && isUnread;
+          })
+          .sort((a, b) => {
+            return (
+              new Date(b.fields.created_at) - new Date(a.fields.created_at)
+            );
+          });
+      }
+
+      async function markNotificationsAsRead(notifications) {
+        for (const notification of notifications) {
+          await updateRecord(TABLES.notifications, notification.id, {
+            read: true,
+          });
+        }
+      }
+
+      async function loadNotifications() {
+        try {
+          const userRecord = await getCurrentUserRecord();
+
+          const profileDockLink = document.querySelector("#profileDockLink");
+
+          if (profileDockLink && currentUser?.id) {
+            profileDockLink.href = `profile.html?user=${currentUser.id}`;
+          }
+
+          currentNotifications = await getUserNotifications(userRecord.id);
+
+          renderNotifications(currentNotifications);
+          updateNotificationCount(currentNotifications.length);
+        } catch (err) {
+          console.error("Could not load notifications:", err);
+
+          const notificationsList =
+            document.querySelector("#notificationsList");
+
+          if (notificationsList) {
+            notificationsList.innerHTML = `
+        <div class="p-4 text-sm text-red-700 bg-red-100">
+          Could not load notifications.
+        </div>
+      `;
+          }
+        }
+      }
+
+      function initializeNotifications() {
+        const notificationsDropdown =
+          document.querySelector(".dropdown-content");
+
+        if (!notificationsDropdown) return;
+
+        notificationsDropdown.addEventListener("focusin", async () => {
+          if (notificationsMarkedRead || !currentNotifications.length) return;
+
+          notificationsMarkedRead = true;
+
+          try {
+            await markNotificationsAsRead(currentNotifications);
+
+            currentNotifications = [];
+            renderNotifications([]);
+            updateNotificationCount(0);
+          } catch (err) {
+            console.error("Could not mark notifications as read:", err);
+          }
+        });
+      }
+
       async function loadBrowseRecords() {
         const type = browseType.value;
 
@@ -483,6 +657,8 @@
       searchInput.addEventListener("input", renderList);
 
       loadBrowseRecords();
+      loadNotifications();
+      initializeNotifications();
     </script>
   </body>
 </html>
