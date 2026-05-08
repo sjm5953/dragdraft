@@ -326,33 +326,32 @@
         }
 
         const now = new Date();
-
-        const upcomingEpisodes = episodes
-          .filter((episode) => new Date(episode.fields.air_date) > now)
-          .sort(
-            (a, b) => new Date(a.fields.air_date) - new Date(b.fields.air_date),
-          );
-
-        if (!upcomingEpisodes.length) {
-          lockDraftButton("Draft locked");
-          return;
-        }
-
-        const nextEpisode = upcomingEpisodes[0];
-        const nextAirDate = new Date(nextEpisode.fields.air_date);
-
         const lockDraftSetting = league.fields.lock_draft || "Day Before";
 
-        let lockDate = new Date(nextAirDate);
+        const sortedEpisodes = episodes.sort(
+          (a, b) => new Date(a.fields.air_date) - new Date(b.fields.air_date),
+        );
 
-        if (lockDraftSetting === "Hour Before") {
-          lockDate.setHours(lockDate.getHours() - 1);
-        } else {
-          lockDate.setDate(lockDate.getDate() - 1);
-          lockDate.setHours(0, 0, 0, 0);
-        }
+        const isLockedNow = sortedEpisodes.some((episode) => {
+          const airDate = new Date(episode.fields.air_date);
 
-        if (now >= lockDate) {
+          let lockStart = new Date(airDate);
+          let lockEnd = new Date(airDate);
+
+          if (lockDraftSetting === "Hour Before") {
+            lockStart.setHours(lockStart.getHours() - 1);
+            lockEnd.setHours(lockEnd.getHours() + 1);
+          } else {
+            lockStart.setDate(lockStart.getDate() - 1);
+            lockStart.setHours(0, 0, 0, 0);
+
+            lockEnd = new Date(airDate);
+          }
+
+          return now >= lockStart && now < lockEnd;
+        });
+
+        if (isLockedNow) {
           lockDraftButton("Draft locked");
           return;
         }
@@ -815,8 +814,7 @@
           if (episode) episodes.push(episode);
         }
 
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const now = new Date();
 
         const sortedEpisodes = episodes
           .filter((ep) => ep.fields.air_date)
@@ -825,15 +823,11 @@
           );
 
         const airedEpisodes = sortedEpisodes.filter((ep) => {
-          const airDate = new Date(ep.fields.air_date);
-          airDate.setHours(0, 0, 0, 0);
-          return airDate <= today;
+          return new Date(ep.fields.air_date) <= now;
         });
 
         const upcomingEpisodes = sortedEpisodes.filter((ep) => {
-          const airDate = new Date(ep.fields.air_date);
-          airDate.setHours(0, 0, 0, 0);
-          return airDate > today;
+          return new Date(ep.fields.air_date) > now;
         });
 
         if (airedEpisodes.length) {

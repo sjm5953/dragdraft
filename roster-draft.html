@@ -113,21 +113,25 @@
         </div>
         <div class="mt-6">
           <div class="flex items-center justify-between">
-            <h2 class="font-black uppercase text-lg">Roster Slots</h2>
+            <h2 class="font-black uppercase text-lg">Available Queens</h2>
 
-            <button
-              id="saveRosterBtn"
-              class="btn btn-sm rounded-none bg-primary text-neutral border-0 shadow-none uppercase font-black"
+            <span
+              id="slotCount"
+              class="text-xs uppercase opacity-50 font-black"
             >
-              Save
-            </button>
+              0 / 0 selected
+            </span>
           </div>
 
-          <div id="slotGrid" class="grid grid-cols-2 gap-3 mt-3"></div>
+          <div id="queenGrid" class="grid grid-cols-3 gap-3 mt-3 pb-10"></div>
 
-          <h2 class="font-black uppercase text-lg mt-8">Available Queens</h2>
-
-          <div id="queenGrid" class="grid grid-cols-2 gap-3 mt-3 pb-10"></div>
+          <div id="toast" class="toast toast-bottom toast-center hidden z-50">
+            <div class="alert bg-neutral text-base-100 rounded-none border-0">
+              <span id="toastText" class="font-black uppercase text-xs">
+                You have filled your slots already.
+              </span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -157,9 +161,10 @@
       const params = new URLSearchParams(window.location.search);
       const leagueId = params.get("league");
 
-      const slotGrid = document.querySelector("#slotGrid");
       const queenGrid = document.querySelector("#queenGrid");
-      const saveRosterBtn = document.querySelector("#saveRosterBtn");
+      const slotCount = document.querySelector("#slotCount");
+      const toast = document.querySelector("#toast");
+      const toastText = document.querySelector("#toastText");
 
       let currentLeague = null;
       let currentLeagueMember = null;
@@ -167,35 +172,12 @@
       let nextEpisodeId = null;
       let seasonContestants = [];
       let activeAssignments = [];
-      let slots = [];
+      let allRosterAssignments = [];
+      let selectedQueenIds = [];
+      let availableSlots = 0;
 
       if (!currentUser?.id) {
         window.location.href = "auth.html";
-      }
-
-      function setDragPreview(e, queen) {
-        const mirror = document.createElement("div");
-        mirror.className = "drag-mirror bg-neutral-100 p-3 shadow-xl";
-
-        mirror.innerHTML = `
-    ${
-      queen.image_url
-        ? `<img src="${queen.image_url}" class="w-full aspect-square object-cover bg-neutral-300" />`
-        : `<div class="w-full aspect-square bg-neutral-300"></div>`
-    }
-
-    <h3 class="font-black uppercase text-xs mt-2 leading-tight">
-      ${queen.name}
-    </h3>
-  `;
-
-        document.body.appendChild(mirror);
-
-        e.dataTransfer.setDragImage(mirror, 75, 75);
-
-        setTimeout(() => {
-          mirror.remove();
-        }, 0);
       }
 
       function airtableUrl(tableName, extra = "") {
@@ -274,7 +256,7 @@
         currentLeague = await getRecordById(TABLES.leagues, leagueId);
 
         if (!currentLeague) {
-          slotGrid.innerHTML = `<div class="bg-red-100 text-red-700 p-4">League not found.</div>`;
+          queenGrid.innerHTML = `<div class="bg-red-100 text-red-700 p-4 col-span-2">League not found.</div>`;
           return;
         }
         document.querySelector("#draftPageTitle").textContent =
@@ -295,14 +277,18 @@
         }
 
         if (!currentLeagueMember) {
-          slotGrid.innerHTML = `<div class="bg-red-100 text-red-700 p-4">You are not a member of this league.</div>`;
+          queenGrid.innerHTML = `
+  <div class="bg-red-100 text-red-700 p-4 col-span-2">
+    Could not find your League Members record for this league.
+  </div>
+`;
           return;
         }
 
         const activeSeasonId = currentLeague.fields.active_season?.[0];
 
         if (!activeSeasonId) {
-          slotGrid.innerHTML = `<div class="bg-neutral-100 p-4">No active season set.</div>`;
+          queenGrid.innerHTML = `<div class="bg-neutral-100 p-4 col-span-2">No active season set.</div>`;
           return;
         }
 
@@ -331,8 +317,7 @@
         nextEpisodeId = upcomingEpisodes[0]?.id || null;
 
         if (!nextEpisodeId) {
-          saveRosterBtn.disabled = true;
-          saveRosterBtn.textContent = "No Upcoming Episode";
+          showToast("No upcoming episode found.");
         }
       }
 
@@ -368,284 +353,178 @@
           currentLeagueMember.fields.roster_assignments || [];
 
         activeAssignments = [];
+        allRosterAssignments = [];
 
         for (const id of assignmentIds) {
           const assignment = await getRecordById(TABLES.rosterAssignments, id);
-
           if (!assignment) continue;
 
-          const isActive = assignment.fields.active === true;
+          allRosterAssignments.push(assignment);
 
-          if (isActive) {
+          if (assignment.fields.active === true) {
             activeAssignments.push(assignment);
           }
         }
 
-        const availableSlots = Number(
+        availableSlots = Number(
           currentLeagueMember.fields.available_slots || 0,
         );
 
-        slots = Array.from({ length: availableSlots }, (_, index) => {
-          const assignment = activeAssignments[index];
-          const seasonContestantId = assignment?.fields?.queen?.[0] || null;
-
-          return {
-            slotIndex: index,
-            seasonContestantId,
-          };
-        });
+        selectedQueenIds = activeAssignments
+          .map((assignment) => assignment.fields.queen?.[0])
+          .filter(Boolean)
+          .slice(0, availableSlots);
       }
 
-      function getSelectedIds() {
-        return slots.map((slot) => slot.seasonContestantId).filter(Boolean);
+      function showToast(message) {
+        toastText.textContent = message;
+        toast.classList.remove("hidden");
+
+        setTimeout(() => {
+          toast.classList.add("hidden");
+        }, 1800);
       }
 
-      function renderSlots() {
-        slotGrid.innerHTML = "";
-
-        if (!slots.length) {
-          slotGrid.innerHTML = `
-
-      `;
-          return;
-        }
-
-        slots.forEach((slot, index) => {
-          const selectedQueen = seasonContestants.find(
-            (queen) => queen.id === slot.seasonContestantId,
-          );
-
-          const zone = document.createElement("div");
-          zone.className =
-            "min-h-36 bg-neutral-100 border border-dashed border-neutral-300 p-3 flex items-center justify-center";
-          zone.dataset.slotIndex = index;
-
-          zone.addEventListener("dragover", (e) => e.preventDefault());
-
-          zone.addEventListener("drop", (e) => {
-            e.preventDefault();
-
-            const seasonContestantId =
-              e.dataTransfer.getData("seasonContestantId");
-
-            if (!seasonContestantId) return;
-
-            slots = slots.map((slot) =>
-              slot.seasonContestantId === seasonContestantId
-                ? { ...slot, seasonContestantId: null }
-                : slot,
-            );
-
-            slots[index].seasonContestantId = seasonContestantId;
-
-            renderSlots();
-            renderAvailableQueens();
-          });
-
-          if (selectedQueen) {
-            zone.innerHTML = `
-          <div
-            draggable="true"
-            data-season-contestant-id="${selectedQueen.id}"
-            class="w-full cursor-grab"
-          >
-            ${
-              selectedQueen.image_url
-                ? `<img src="${selectedQueen.image_url}" class="w-full aspect-square object-cover bg-neutral-300" />`
-                : `<div class="w-full aspect-square bg-neutral-300"></div>`
-            }
-
-            <h3 class="font-black uppercase text-sm mt-2 leading-tight">
-              ${selectedQueen.name}
-            </h3>
-
-            <div class="flex justify-between items-center mt-1">
-              <p class="text-xs opacity-50 uppercase">Points</p>
-              <p class="font-black text-sm">${selectedQueen.points}</p>
-            </div>
-
-            <button
-              type="button"
-              data-clear-slot="${index}"
-              class="btn btn-xs rounded-none w-full mt-3 bg-base-100 border-neutral shadow-none uppercase font-black"
-            >
-              Remove
-            </button>
-          </div>
-        `;
-
-            zone
-              .querySelector("[draggable='true']")
-              .addEventListener("dragstart", (e) => {
-                e.dataTransfer.setData("seasonContestantId", selectedQueen.id);
-
-                setDragPreview(e, selectedQueen);
-              });
-
-            zone
-              .querySelector("[data-clear-slot]")
-              .addEventListener("click", () => {
-                slots[index].seasonContestantId = null;
-                renderSlots();
-                renderAvailableQueens();
-              });
-          } else {
-            zone.innerHTML = `
-          <div class="text-center">
-            <p class="font-black uppercase text-sm opacity-50">
-              Slot ${index + 1}
-            </p>
-            <p class="text-xs opacity-40 mt-1">Drag queen here</p>
-          </div>
-        `;
-          }
-
-          slotGrid.appendChild(zone);
-        });
+      function updateSlotCount() {
+        slotCount.textContent = `${selectedQueenIds.length} / ${availableSlots} selected`;
       }
 
-      function renderAvailableQueens() {
+      function renderQueenGrid() {
         queenGrid.innerHTML = "";
+        updateSlotCount();
 
-        const selectedIds = getSelectedIds();
-
-        const availableQueens = seasonContestants.filter(
-          (queen) => !selectedIds.includes(queen.id),
-        );
-
-        if (!availableQueens.length) {
+        if (!seasonContestants.length) {
           queenGrid.innerHTML = `
-        <div class="bg-neutral-100 p-4 col-span-2 text-sm opacity-60">
-          No available queens.
-        </div>
-      `;
+      <div class="bg-neutral-100 p-4 col-span-2 text-sm opacity-60">
+        No queens found.
+      </div>
+    `;
           return;
         }
 
-        availableQueens.forEach((queen) => {
-          const card = document.createElement("div");
-          card.draggable = true;
+        seasonContestants.forEach((queen) => {
+          const isSelected = selectedQueenIds.includes(queen.id);
+
+          const card = document.createElement("button");
+          card.type = "button";
           card.dataset.seasonContestantId = queen.id;
-          card.className = "bg-neutral-100 p-3 cursor-grab";
+
+          card.className = `
+      text-left bg-neutral-100 p-3 border transition
+      ${isSelected ? "border-primary border-2" : "border-transparent"}
+    `;
 
           card.innerHTML = `
-        ${
-          queen.image_url
-            ? `<img src="${queen.image_url}" class="w-full aspect-square object-cover bg-neutral-300" />`
-            : `<div class="w-full aspect-square bg-neutral-300"></div>`
-        }
+      ${
+        queen.image_url
+          ? `<img src="${queen.image_url}" class="w-full aspect-square object-cover bg-neutral-300" />`
+          : `<div class="w-full aspect-square bg-neutral-300"></div>`
+      }
 
-        <h3 class="font-black uppercase text-sm mt-2 leading-tight">
-          ${queen.name}
-        </h3>
+      <h3 class="font-black uppercase text-xs mt-2 leading-tight">
+        ${queen.name}
+      </h3>
+    `;
 
-
-      `;
-
-          card.addEventListener("dragstart", (e) => {
-            e.dataTransfer.setData("seasonContestantId", queen.id);
-
-            setDragPreview(e, queen);
-          });
+          card.addEventListener("click", () => toggleQueenSelection(queen.id));
 
           queenGrid.appendChild(card);
         });
       }
 
-      async function saveRoster() {
-        if (!nextEpisodeId) {
-          alert("No upcoming episode found.");
-          return;
-        }
+      async function toggleQueenSelection(seasonContestantId) {
+        const isSelected = selectedQueenIds.includes(seasonContestantId);
 
-        saveRosterBtn.textContent = "Saving...";
+        if (isSelected) {
+          selectedQueenIds = selectedQueenIds.filter(
+            (id) => id !== seasonContestantId,
+          );
+          renderQueenGrid();
 
-        try {
-          const selectedIds = getSelectedIds();
-
-          for (const assignment of activeAssignments) {
-            const assignmentQueenId = assignment.fields.queen?.[0];
-            const existingEpisodeIds = assignment.fields.episodes || [];
-
-            const isStillSelected = selectedIds.includes(assignmentQueenId);
-
-            if (isStillSelected) {
-              const updatedEpisodeIds = existingEpisodeIds.includes(
-                nextEpisodeId,
-              )
-                ? existingEpisodeIds
-                : [...existingEpisodeIds, nextEpisodeId];
-
-              await updateRecord(TABLES.rosterAssignments, assignment.id, {
-                episodes: updatedEpisodeIds,
-                active: true,
-              });
-            } else {
-              await updateRecord(TABLES.rosterAssignments, assignment.id, {
-                active: false,
-              });
-            }
-          }
-
-          const existingActiveQueenIds = activeAssignments
-            .map((assignment) => assignment.fields.queen?.[0])
-            .filter(Boolean);
-
-          const newQueenIds = selectedIds.filter(
-            (queenId) => !existingActiveQueenIds.includes(queenId),
+          const assignment = activeAssignments.find(
+            (assignment) => assignment.fields.queen?.[0] === seasonContestantId,
           );
 
-          for (const seasonContestantId of newQueenIds) {
-            await createRecord(TABLES.rosterAssignments, {
-              member: [currentLeagueMember.id],
-              queen: [seasonContestantId],
-              episodes: [nextEpisodeId],
-              active: true,
+          if (assignment) {
+            await updateRecord(TABLES.rosterAssignments, assignment.id, {
+              active: false,
             });
           }
 
-          saveRosterBtn.textContent = "Saved";
-
-          setTimeout(() => {
-            saveRosterBtn.textContent = "Save";
-          }, 1200);
-
           await loadActiveRoster();
-          renderSlots();
-          renderAvailableQueens();
-        } catch (err) {
-          console.error(err);
-          saveRosterBtn.textContent = "Save";
-          alert(err.message);
+          renderQueenGrid();
+          return;
         }
+
+        if (selectedQueenIds.length >= availableSlots) {
+          showToast("You have filled your slots already.");
+          return;
+        }
+
+        if (!nextEpisodeId) {
+          showToast("No upcoming episode found.");
+          return;
+        }
+
+        selectedQueenIds.push(seasonContestantId);
+        renderQueenGrid();
+
+        const existingAssignment = allRosterAssignments.find(
+          (assignment) => assignment.fields.queen?.[0] === seasonContestantId,
+        );
+
+        if (existingAssignment) {
+          const existingEpisodeIds = existingAssignment.fields.episodes || [];
+
+          await updateRecord(TABLES.rosterAssignments, existingAssignment.id, {
+            active: true,
+            episodes: existingEpisodeIds.includes(nextEpisodeId)
+              ? existingEpisodeIds
+              : [...existingEpisodeIds, nextEpisodeId],
+          });
+        } else {
+          await createRecord(TABLES.rosterAssignments, {
+            member: [currentLeagueMember.id],
+            queen: [seasonContestantId],
+            episodes: [nextEpisodeId],
+            active: true,
+          });
+        }
+
+        currentLeagueMember = await getRecordById(
+          TABLES.leagueMembers,
+          currentLeagueMember.id,
+        );
+
+        await loadActiveRoster();
+        renderQueenGrid();
       }
 
       async function initializePage() {
         await loadLeagueContext();
 
         if (!currentLeagueMember) {
-          slotGrid.innerHTML = `
-    <div class="bg-red-100 text-red-700 p-4 col-span-2">
-      Could not find your League Members record for this league.
-    </div>
-  `;
+          queenGrid.innerHTML = `<div class="bg-red-100 text-red-700 p-4 col-span-2">You are not a member of this league.</div>`;
           return;
         }
 
         if (!activeSeason) {
-          slotGrid.innerHTML = `
-    <div class="bg-red-100 text-red-700 p-4 col-span-2">
-      Could not load the league's active season.
-    </div>
-  `;
+          queenGrid.innerHTML = `
+  <div class="bg-red-100 text-red-700 p-4 col-span-2">
+    Could not load the league's active season.
+  </div>
+`;
           return;
         }
 
         await loadSeasonContestants();
-        await loadActiveRoster();
+        currentLeagueMember = await getRecordById(
+          TABLES.leagueMembers,
+          currentLeagueMember.id,
+        );
 
-        renderSlots();
-        renderAvailableQueens();
+        await loadActiveRoster();
+        renderQueenGrid();
       }
 
       let currentNotifications = [];
@@ -803,8 +682,6 @@
           }
         });
       }
-
-      saveRosterBtn.addEventListener("click", saveRoster);
 
       initializePage();
     </script>
